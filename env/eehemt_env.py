@@ -1068,7 +1068,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             # filtered_df = measured_df[measured_df["Vds"] == vds]
             
             self.vds_values = [float(col) for col in measured_df.columns if col != 'vg']
-            vds_arr = np.array(self.vds_values, dtype=float)
 
             # ugw_n_combinations = filtered_df[["width", "finger"]].drop_duplicates()
             # self.ugw_n_values = [
