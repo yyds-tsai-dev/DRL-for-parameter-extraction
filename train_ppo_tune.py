@@ -73,14 +73,15 @@ if __name__ == "__main__":
     )  # The mean reward to stop training
 
     # === Learner arguments ===
-    # if th.cuda.device_count() == 4:
-    #     num_learners = 4
-    #     num_gpus_per_learner = 1.0
-    # elif th.cuda.device_count() == 2:
-    #     num_learners = 2
-    #     num_gpus_per_learner = 1.0
-    num_learners = th.cuda.device_count() // 2
-    num_gpus_per_learner = 1.0
+    device_count = th.cuda.device_count()
+    if device_count > 0:
+        num_learners = device_count // 2
+        if num_learners == 0:
+            num_learners = 1
+        num_gpus_per_learner = 1.0
+    else:
+        num_learners = int(os.getenv("NUM_LEARNERS", 1))
+        num_gpus_per_learner = 0.0
 
     # === Evaluation arguments ===
     # parser.add_argument("--log_y", action="store_true")
@@ -151,6 +152,7 @@ if __name__ == "__main__":
     #     reuse_actors=True,
     # )
 
+    # algo_name = os.getenv("ALGO_NAME", "ppo")
     checkpoint_dir = os.path.join(current_dir, os.getenv("CHECKPOINT_DIR", ""))
     stopping_criteria = {"training_iteration": args.n_iterations}
     ckpt_config = tune.CheckpointConfig(
@@ -167,7 +169,6 @@ if __name__ == "__main__":
             WandbLoggerCallback(
                 project="PPO_for_multi_I-V_curves_fitting_in_EEHEMT",
                 api_key=os.getenv("WANDB_API_KEY", default=""),
-                # log_config=True,
             )
         ],
     )

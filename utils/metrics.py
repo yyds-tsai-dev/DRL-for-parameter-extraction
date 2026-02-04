@@ -39,7 +39,7 @@ def calculate_nrmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     # - If RMSE is also 0, the error is 0%.
     # - If RMSE > 0, the relative error is infinite.
     if rms_true < 1e-12:
-        return np.inf if rmse > 1e-12 else 0.0
+        return 1e4 if rmse > 1e-12 else 0.0
 
     nrmse = (rmse / rms_true) * 100
     

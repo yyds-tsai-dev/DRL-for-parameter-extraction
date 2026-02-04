@@ -73,7 +73,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             )
         measured_df = pd.read_csv(self.csv_file_path)
         self.vgs = measured_df['vg'].values
-        self.n_vgs = len(self.n_vgs)
+        self.n_vgs = len(self.vgs)
         print(f"==== Using Vgs values: {self.vgs} ====")
         self.vds = [float(col) for col in measured_df.columns if col != 'vg']
         self.n_vds = len(self.vds)
@@ -275,12 +275,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 **sim_params,
             )
 
-            # if np.any(np.isnan(i_sim_single_curve)) or np.any(
-            #     np.isinf(i_sim_single_curve)
-            # ):
-            #     i_sim_single_curve = np.nan_to_num(
-            #         i_sim_single_curve, nan=0.0, posinf=1e5, neginf=-1e5
-            #     )
+            if np.any(np.isnan(i_sim_single_curve)) or np.any(
+                np.isinf(i_sim_single_curve)
+            ):
+                i_sim_single_curve = np.nan_to_num(
+                    i_sim_single_curve, nan=0.0, posinf=0.1, neginf=-0.1
+                )
 
             i_sim_results.append(i_sim_single_curve)
         
@@ -378,7 +378,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.prev_nrmse = avg_init_nrmse
 
         observation = self._get_obs(init_err_vector)
-        info = self._get_info(float(avg_init_nrmse))
+        info = self._get_info(avg_init_nrmse)
 
         return observation, info
 
@@ -422,14 +422,14 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         current_nrmse = np.mean(nrmse_vals)
         ### New
         # raw_reward = self.prev_nrmse - current_nrmse
-        raw_reward = -np.log(self.prev_nrmse - current_nrmse + EPSILON)
+        raw_reward = np.clip(-np.log10(current_nrmse + EPSILON), -10.0, 10.0)
         reward = self._normalize_reward(float(raw_reward))
 
         self.prev_nrmse = current_nrmse
 
         # === Get the next observation and info ===
         observation = self._get_obs(current_err_vector)
-        info = self._get_info(float(current_nrmse))
+        info = self._get_info(current_nrmse)
 
         # === Check Termination Conditions ===
         terminated_success = current_nrmse < self.NRMSE_THRESHOLD

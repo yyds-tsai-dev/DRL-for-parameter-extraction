@@ -6,7 +6,7 @@ import numpy as np
 from dotenv import load_dotenv
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 
-from env.eehemt_env import CHANGE_PARAM_NAMES, key_params_names
+from env.eehemt_env import CURVE_CONDITION_NAMES, key_params_names
 
 load_dotenv()
 ### New
@@ -206,18 +206,18 @@ def plot_all_condition_iv_curve(
         )
 
     # === Set the plot style and labels ===
-    ax.set_title(f"I-V Curve Comparison for All {', '.join(CHANGE_PARAM_NAMES)} Values")
+    ax.set_title(f"I-V Curve Comparison for All {', '.join(CURVE_CONDITION_NAMES)} Values")
     ax.set_xlabel("Gate Voltage (Vg) [V]")
     if log_y:
         ax.set_ylabel("Log Drain Current (Id) [mA]")
         ax.set_yscale("log")
         save_path = os.path.join(
-            plot_dir, f"iv_curve_all_{'_'.join(CHANGE_PARAM_NAMES)}_log_{plot_cnt}.png"
+            plot_dir, f"iv_curve_all_{'_'.join(CURVE_CONDITION_NAMES)}_log_{plot_cnt}.png"
         )
     else:
         ax.set_ylabel("Drain Current (Id) [mA]")
         save_path = os.path.join(
-            plot_dir, f"iv_curve_all_{'_'.join(CHANGE_PARAM_NAMES)}_{plot_cnt}.png"
+            plot_dir, f"iv_curve_all_{'_'.join(CURVE_CONDITION_NAMES)}_{plot_cnt}.png"
         )
 
     ax.grid(True, which="both", ls="--", alpha=0.7)
@@ -249,7 +249,7 @@ class PlotCurve(DefaultCallbacks):
         self.plot_data = None
         ### New
         self.ugw_n_values = None  # Store lg values for plotting
-        self.vds_values = None
+        self.vds = None
         self.plot_cnt = 0
         self.min_nrmse = 100.0
 
@@ -267,8 +267,8 @@ class PlotCurve(DefaultCallbacks):
                 self.plot_data = actual_env._get_plot_data_matrix()
                 if hasattr(actual_env, "ugw_n_values"):
                     self.ugw_n_values = actual_env.ugw_n_values
-                if hasattr(actual_env, "vds_values"):
-                    self.vds_values = actual_env.vds_values
+                if hasattr(actual_env, "vds"):
+                    self.vds = actual_env.vds
             else:
                 print("Warning: Environment does not have '_get_plot_data' method.")
                 self.plot_data = {}
@@ -353,9 +353,9 @@ class PlotCurve(DefaultCallbacks):
                         log_y=True,
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
-                elif self.vds_values is not None:
+                elif self.vds is not None:
                     plot_all_condition_iv_curve(
-                        ugw_n_values=self.vds_values,
+                        ugw_n_values=self.vds,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
                         # log_y=os.getenv("LOG_Y", "True").lower() == "true",
@@ -363,7 +363,7 @@ class PlotCurve(DefaultCallbacks):
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
                     plot_all_condition_iv_curve(
-                        ugw_n_values=self.vds_values,
+                        ugw_n_values=self.vds,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
                         log_y=True,
