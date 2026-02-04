@@ -23,7 +23,6 @@ if __name__ == "__main__":
         type=str,
         default=os.path.join(current_dir, os.getenv("VA_FILE_PATH", "")),
     )
-    # parser.add_argument("--change_param_names", type=str, default=os.getenv("CHANGE_PARAM_NAMES", "UGW,NOF"))
     # parser.add_argument(
     #     "--simulate_target_data",
     #     action="store_true",
@@ -34,9 +33,6 @@ if __name__ == "__main__":
         type=str,
         default=os.path.join(current_dir, os.getenv("CSV_FILE_PATH", "")),
     )
-    ### New
-    parser.add_argument("--vds", type=float, default=float(os.getenv("VDS", 0.5)))
-    # parser.add_argument("--test_modified", action="store_true")
     parser.add_argument("--reward_norm", action="store_true")
     parser.add_argument("--use_stagnation", action="store_true")
     parser.add_argument("--reduce_obs_err_dim", action="store_true")
@@ -107,8 +103,6 @@ if __name__ == "__main__":
                 "va_file_path": args.va_file_path,
                 # "simulate_target_data": args.simulate_target_data,
                 "csv_file_path": args.csv_file_path,
-                # "vds": args.vds,
-                # "test_modified": args.test_modified,
                 "reduce_obs_err_dim": args.reduce_obs_err_dim,
                 "reward_norm": args.reward_norm,
                 # "use_stagnation": args.use_stagnation,

@@ -12,134 +12,8 @@ load_dotenv()
 ### New
 PLOT_PERIOD = int(os.getenv("PLOT_PERIOD", 5))
 
-
-def plot_iv_curve(
-    plot_data: dict,
-    plot_initial: bool = True,
-    plot_modified: bool = True,
-    plot_current: bool = True,
-    save_path: str | None = None,
-):
-    """
-    Use pre-calculated data to plot the I-V curve.
-    """
-    output_dir = os.path.dirname(save_path) if save_path else "results"
-    os.makedirs(output_dir, exist_ok=True)
-
-    plt.figure(figsize=(10, 7))
-
-    # Plot measured data from the dictionary
-    plt.plot(
-        plot_data["vgs"], plot_data["i_meas"], "ko", label="Measured Data (Target)"
-    )
-
-    # Plot simulated curves based on options
-    if plot_initial:
-        plt.plot(
-            plot_data["vgs"],
-            plot_data["i_sim_initial"],
-            "b--",
-            label=f"Simulated (Initial Params, Vto={plot_data['vto']:.2f})",
-        )
-
-    if plot_modified:
-        plt.plot(
-            plot_data["vgs"],
-            plot_data["i_sim_modified"],
-            "g-.",
-            label=f"Simulated (Modified Initial Params, Vto={plot_data['vto']:.2f})",
-        )
-
-    if plot_current:
-        plt.plot(
-            plot_data["vgs"],
-            plot_data["i_sim_current"],
-            "r-",
-            label=f"Simulated (Current Params, Vto={plot_data['vto']:.2f})",
-        )
-
-    # Style the plot
-    plt.title("I-V Curve Comparison")
-    plt.xlabel("Gate Voltage (Vg) [V]")
-    plt.ylabel("Log Drain Current (Id) [A]")
-    plt.yscale("log")
-    plt.grid(True, which="both", ls="--")
-    plt.legend()
-    plt.tight_layout()
-
-    if save_path:
-        plt.savefig(save_path)
-        print(f"I-V curve plot saved to {save_path}")
-    else:
-        plt.show()
-
-    plt.close()
-
-
-def plot_all_lg_iv_curve(
-    lg_values: list,
-    plot_data: dict,
-    plot_dir: str,
-):
-    """
-    Plots and saves individual I-V curves for each lg condition.
-
-    Args:
-        lg_values (list): A list containing all lg float values.
-        plot_data (dict): A dictionary containing static plotting data,
-                          such as 'vgs', 'i_meas_dict', etc.
-        plot_dir (str): The directory path to save the plots.
-    """
-    # Get static data from plot_data
-    vgs = plot_data["vgs"]
-    i_meas_dict = plot_data["i_meas_dict"]
-    i_sim_init_matrix = plot_data["i_sim_init_matrix"]
-    # i_sim_modified_matrix = plot_data["i_sim_modified_matrix"]
-    i_sim_current_matrix = plot_data["i_sim_current_matrix"]
-
-    plt.figure(figsize=(12, 8))
-
-    # Iterate through each lg and its corresponding index
-    for i, lg in enumerate(lg_values):
-        # 1. Plot the target data (Measured)
-        plt.plot(vgs, i_meas_dict[lg], "o", label=f"Target (lg={lg})")
-
-        # 2. Plot the simulated curve with initial parameters
-        plt.plot(
-            vgs,
-            i_sim_init_matrix[i, :],  # Get the i-th row
-            "b--",
-            label=f"Initial (lg={lg})",
-        )
-
-        # 3. Plot the simulated curve with the agent's final parameters
-        plt.plot(
-            vgs,
-            i_sim_current_matrix[i, :],  # Get the i-th row
-            "r-",
-            label=f"Current (lg={lg})",
-        )
-
-    # Set the plot style
-    # plt.title(f"I-V Curve Comparison (lg = {lg:.2f})")
-
-    plt.title("I-V Curve Comparison for All lg Values")
-    plt.xlabel("Gate Voltage (Vg) [V]")
-    plt.ylabel("Log Drain Current (Id) [A]")
-    plt.yscale("log")
-    plt.grid(True, which="both", ls="--", alpha=0.7)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize="small")
-    plt.tight_layout(rect=[0, 0, 0.85, 1])  # type: ignore
-    # Save the plot
-    save_path = os.path.join(plot_dir, "final_iv_curve_all_lg.png")
-    plt.savefig(save_path, dpi=300)
-    plt.close()
-
-    print(f"==== I-V curve plot saved in {save_path} ====")
-
-
 def plot_all_condition_iv_curve(
-    ugw_n_values: list,
+    curve_condition_values: list,
     plot_data: dict,
     plot_dir: str,
     log_y: bool = True,
@@ -150,7 +24,7 @@ def plot_all_condition_iv_curve(
     Each curve type (Target, Initial, Current) has its own color gradient.
 
     Args:
-        ugw_n_values (list): A list containing all (Ugw, NOF) float values.
+        curve_condition_values (list): A list containing all (Ugw, NOF) float values.
         plot_data (dict): A dictionary containing static plotting data.
         plot_dir (str): The directory path to save the plots.
     """
@@ -166,16 +40,16 @@ def plot_all_condition_iv_curve(
     # === Create distinct color maps for each curve type ===
     # We generate a list of colors for each type of curve.
     # Using np.linspace(0.5, 1, ...) ensures colors are not too light.
-    num_curves = len(ugw_n_values)
-    target_colors = plt.get_cmap("Blues")(np.linspace(0.5, 1, num_curves))
+    num_curves = len(curve_condition_values)
+    target_colors = plt.get_cmap("rainbow")(np.linspace(0.5, 1, num_curves))
     # initial_colors = plt.get_cmap("Greens")(np.linspace(0.5, 1, num_curves))
-    current_colors = plt.get_cmap("Reds")(np.linspace(0.5, 1, num_curves))
+    current_colors = plt.get_cmap("rainbow")(np.linspace(0.5, 1, num_curves))
 
     # === Iterate through each (Ugw, NOF) pair and plot with gradient colors ===
-    for i, ugw_n in enumerate(ugw_n_values):
-        label_target = "Target" if i == len(ugw_n_values) - 1 else None
-        # label_initial = "Initial" if i == len(ugw_n_values) - 1 else None
-        label_current = "PPO" if i == len(ugw_n_values) - 1 else None
+    for i, ugw_n in enumerate(curve_condition_values):
+        label_target = "Experiments" if i == len(curve_condition_values) - 1 else None
+        # label_initial = "Initial" if i == len(curve_condition_values) - 1 else None
+        label_current = "Modeling" if i == len(curve_condition_values) - 1 else None
         # 1. Plot the target data (Measured) using the 'Blues' colormap.
         ax.plot(
             vgs,
@@ -207,15 +81,15 @@ def plot_all_condition_iv_curve(
 
     # === Set the plot style and labels ===
     ax.set_title(f"I-V Curve Comparison for All {', '.join(CURVE_CONDITION_NAMES)} Values")
-    ax.set_xlabel("Gate Voltage (Vg) [V]")
+    ax.set_xlabel("Vg(Gate Voltage) [V]")
     if log_y:
-        ax.set_ylabel("Log Drain Current (Id) [mA]")
+        ax.set_ylabel("log(Id) (Log Drain Current) [mA]")
         ax.set_yscale("log")
         save_path = os.path.join(
             plot_dir, f"iv_curve_all_{'_'.join(CURVE_CONDITION_NAMES)}_log_{plot_cnt}.png"
         )
     else:
-        ax.set_ylabel("Drain Current (Id) [mA]")
+        ax.set_ylabel("Id(Drain Current) [mA]")
         save_path = os.path.join(
             plot_dir, f"iv_curve_all_{'_'.join(CURVE_CONDITION_NAMES)}_{plot_cnt}.png"
         )
@@ -248,7 +122,7 @@ class PlotCurve(DefaultCallbacks):
 
         self.plot_data = None
         ### New
-        self.ugw_n_values = None  # Store lg values for plotting
+        self.curve_condition_values = None  # Store lg values for plotting
         self.vds = None
         self.plot_cnt = 0
         self.min_nrmse = 100.0
@@ -265,8 +139,8 @@ class PlotCurve(DefaultCallbacks):
             if hasattr(actual_env, "_get_plot_data_matrix"):
                 # Fetch static plot data only once
                 self.plot_data = actual_env._get_plot_data_matrix()
-                if hasattr(actual_env, "ugw_n_values"):
-                    self.ugw_n_values = actual_env.ugw_n_values
+                if hasattr(actual_env, "curve_condition_values"):
+                    self.curve_condition_values = actual_env.curve_condition_values
                 if hasattr(actual_env, "vds"):
                     self.vds = actual_env.vds
             else:
@@ -330,16 +204,21 @@ class PlotCurve(DefaultCallbacks):
             nrmse = last_info["nrmse"]
             if nrmse < self.min_nrmse:
                 self.min_nrmse = nrmse
+                
+            metrics_logger.log_value(
+                "min_nrmse",
+                self.min_nrmse,
+                reduce="mean",
+            )
+            print(f"\nFinal NRMSE: {nrmse:.4f}%\nMin NRMSE: {self.min_nrmse:.4f}%")
 
             self.plot_data["i_sim_current_matrix"] = last_info["i_sim_current_matrix"]  # type: ignore
 
-            print(f"\nFinal NRMSE: {nrmse:.5f}\nMin NRMSE: {self.min_nrmse:.5f}")
-
             ### New
             if self.plot_cnt % PLOT_PERIOD == 0:
-                if self.ugw_n_values is not None:
+                if self.curve_condition_values is not None:
                     plot_all_condition_iv_curve(
-                        ugw_n_values=self.ugw_n_values,
+                        curve_condition_values=self.curve_condition_values,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
                         # log_y=os.getenv("LOG_Y", "True").lower() == "true",
@@ -347,7 +226,7 @@ class PlotCurve(DefaultCallbacks):
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
                     plot_all_condition_iv_curve(
-                        ugw_n_values=self.ugw_n_values,
+                        curve_condition_values=self.curve_condition_values,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
                         log_y=True,
@@ -355,7 +234,7 @@ class PlotCurve(DefaultCallbacks):
                     )
                 elif self.vds is not None:
                     plot_all_condition_iv_curve(
-                        ugw_n_values=self.vds,
+                        curve_condition_values=self.vds,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
                         # log_y=os.getenv("LOG_Y", "True").lower() == "true",
@@ -363,7 +242,7 @@ class PlotCurve(DefaultCallbacks):
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
                     plot_all_condition_iv_curve(
-                        ugw_n_values=self.vds,
+                        curve_condition_values=self.vds,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
                         log_y=True,

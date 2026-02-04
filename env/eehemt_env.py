@@ -1,5 +1,5 @@
-import os
 import json
+import os
 
 import gymnasium as gym
 import numpy as np
@@ -16,9 +16,11 @@ from utils.metrics import calculate_nrmse
 load_dotenv()
 
 current_dir = os.getcwd()
-all_possible_key_params_path = os.path.join(current_dir, os.getenv("ALL_POSSIBLE_KEY_PARAMS_PATH", ""))
+all_possible_key_params_path = os.path.join(
+    current_dir, os.getenv("ALL_POSSIBLE_KEY_PARAMS_PATH", "")
+)
 # Dictionary of all possible key parameters
-with open(all_possible_key_params_path, 'r', encoding='utf-8') as f:
+with open(all_possible_key_params_path, "r", encoding="utf-8") as f:
     ALL_POSSIBLE_KEY_PARAMS = json.load(f)
 
 # Get key params name from environment variable
@@ -38,7 +40,7 @@ n_key_params = len(key_params_config)
 
 CURVE_CONDITION_NAMES = os.getenv("CURVE_CONDITION_NAMES", "UGW,NOF").split(",")
 TEMPERATURE = int(os.getenv("TEMPERATURE", 300))
-EPSILON = float(os.getenv("EPSILON", 1e-9))
+EPSILON = float(os.getenv("EPSILON", 1e-15))
 
 
 class EEHEMTEnv_Measure_VDS(gym.Env):
@@ -72,27 +74,31 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 f"Measured data file not found:: {self.csv_file_path}"
             )
         measured_df = pd.read_csv(self.csv_file_path)
-        self.vgs = measured_df['vg'].values
+        self.vgs = measured_df["vg"].values
         self.n_vgs = len(self.vgs)
         print(f"==== Using Vgs values: {self.vgs} ====")
-        self.vds = [float(col) for col in measured_df.columns if col != 'vg']
+        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:6]
         self.n_vds = len(self.vds)
         # print(
         #     f"==== Using Vds values: {', '.join(map(str, self.vds))} ===="
         # )
         print(
-            f"==== Using {', '.join(CURVE_CONDITION_NAMES)} different values: {', '.join(map(str,self.vds))} ===="
+            f"==== Using {', '.join(CURVE_CONDITION_NAMES)} different values: {', '.join(map(str, self.vds))} ===="
         )
 
         # === Init & Target Params (Including key) Initialization ===
         self.init_params = {
-            name: float(param.default) for name, param in self.eehemt_model.modelcard.items()
+            name: float(param.default)
+            for name, param in self.eehemt_model.modelcard.items()
         }
-        for name in key_params_names:
-            min_val = key_params_config[name]["min"]
-            max_val = key_params_config[name]["max"]
-            self.init_params[name] = float(np.random.uniform(min_val, max_val))
-            print(f"==== {name} initialized to random value: {self.init_params[name]} ====")
+        self.init_params["DVcoVgo"] = 0.0  # Initial DVcoVgo = 0.0V
+        # for name in key_params_names:
+        #     min_val = key_params_config[name]["min"]
+        #     max_val = key_params_config[name]["max"]
+        #     self.init_params[name] = float(np.random.uniform(min_val, max_val))
+        #     print(
+        #         f"==== {name} initialized to random value: {self.init_params[name]} ===="
+        #     )
 
         self.current_params = self.init_params.copy()
         self.KEY_PARAMS_MIN = np.array(
@@ -110,6 +116,8 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             filtered_data = measured_df[str(vd)].values
             if len(filtered_data) == self.n_vgs:
                 self.i_meas_dict[vd] = filtered_data
+        self.all_i_meas_matrix = np.array([self.i_meas_dict[vd] for vd in self.vds])
+        self.all_i_meas_log_matrix = np.log10(self.all_i_meas_matrix + EPSILON)
 
         # === Action Space Definition ===
         self.action_space = Box(
@@ -136,7 +144,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         if self.reduce_obs_err_dim:
             total_err_len = int(os.getenv("N_FEATURES_PER_CURVE", 6)) * self.n_vds
         else:
-            total_err_len = self.n_vgs * self.n_vds
+            total_err_len = self.n_vgs * self.n_vds * 2  # 2 for linear & log error
         err_vector_low = np.full(total_err_len, -np.inf)
         err_vector_high = np.full(total_err_len, np.inf)
 
@@ -254,24 +262,20 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 - A flattened numpy array containing all concatenated error vectors.
                 - A numpy array of NRMSE values for each (Ugw, NOF) condition.
         """
-        all_i_meas_matrix = np.array(
-            [self.i_meas_dict[vd] for vd in self.vds]
-        )
-
         i_sim_results = []
-        sim_params = self.current_params.copy()
+        sim_params =  {k: float(v) for k, v in self.current_params.items()}
         sim_params.pop("DVcoVgo", None)
+        # print(
+        #     f"Step: {self.current_step}, Simulating with params: { {k: v for k, v in sim_params.items() if k in key_params_names} }"
+        # )
         for vd in self.vds:
             current_vds_vector = np.full_like(self.vgs, vd)
-            current_sweep_bias = {
-                "br_gisi": self.vgs,
-                "br_disi": current_vds_vector
-            }
-            
+            current_sweep_bias = {"br_gisi": self.vgs, "br_disi": current_vds_vector}
+
             sim_params[CURVE_CONDITION_NAMES[0]] = vd
             i_sim_single_curve = self.eehemt_model.functions["Ids"].eval(
                 temperature=TEMPERATURE,
-                voltages=current_sweep_bias ,
+                voltages=current_sweep_bias,
                 **sim_params,
             )
 
@@ -283,16 +287,21 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 )
 
             i_sim_results.append(i_sim_single_curve)
-        
+
         all_i_sim_matrix = np.array(i_sim_results)
-        all_err_matrix = all_i_meas_matrix - all_i_sim_matrix
+        linear_err = self.all_i_meas_matrix - all_i_sim_matrix
+        log_err = self.all_i_meas_log_matrix - np.log10(all_i_sim_matrix + EPSILON)
+
+        all_err_matrix = np.stack((linear_err, log_err), axis=-1)
         concat_err_vector = all_err_matrix.flatten().astype(np.float32)
 
         # Calculate NRMSE for each I-V curve (each row).
         nrmse_vals = np.array(
             [
                 calculate_nrmse(i_meas_row, i_sim_row)
-                for i_meas_row, i_sim_row in zip(all_i_meas_matrix, all_i_sim_matrix)
+                for i_meas_row, i_sim_row in zip(
+                    self.all_i_meas_matrix, all_i_sim_matrix
+                )
             ],
             dtype=np.float32,
         )
@@ -363,7 +372,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.current_params = self.init_params.copy()
         # Vgo = Vco - DVcoVgo
         if "Vco" in self.current_params and "DVcoVgo" in self.current_params:
-            self.current_params["Vgo"] = self.current_params["Vco"] - self.current_params["DVcoVgo"]
+            self.current_params["Vgo"] = (
+                self.current_params["Vco"] - self.current_params["DVcoVgo"]
+            )
 
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
@@ -411,18 +422,20 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         # Vgo = Vco - DVcoVgo
         if "Vco" in self.current_params and "DVcoVgo" in self.current_params:
-            self.current_params["Vgo"] = self.current_params["Vco"] - self.current_params["DVcoVgo"]
+            self.current_params["Vgo"] = (
+                self.current_params["Vco"] - self.current_params["DVcoVgo"]
+            )
         self.prev_params_delta = dict(zip(key_params_names, key_params_delta))
 
         # === Run simulations for all (Ugw, NOF) conditions ===
-        all_i_sim_matrix, current_err_vector, nrmse_vals = self._run_all_curve_condition_sim()
+        all_i_sim_matrix, current_err_vector, nrmse_vals = (
+            self._run_all_curve_condition_sim()
+        )
 
         # === Calculate NRMSE for reward, termination conditions, and info ===
-        ### New
         current_nrmse = np.mean(nrmse_vals)
-        ### New
         # raw_reward = self.prev_nrmse - current_nrmse
-        raw_reward = np.clip(-np.log10(current_nrmse + EPSILON), -10.0, 10.0)
+        raw_reward = np.clip(-np.log10((current_nrmse / 100.0) + EPSILON), -10.0, 10.0)
         reward = self._normalize_reward(float(raw_reward))
 
         self.prev_nrmse = current_nrmse
@@ -468,4 +481,3 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             "vgs": self.vgs,
             "i_meas_dict": self.i_meas_dict,
         }
-
