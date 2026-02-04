@@ -17,21 +17,22 @@ if __name__ == "__main__":
     load_dotenv()
 
     # === Env arguments ===
+    current_dir = os.getcwd()
     parser.add_argument(
         "--va_file_path",
         type=str,
-        default=os.getenv("VA_FILE_PATH", ""),
+        default=os.path.join(current_dir, os.getenv("VA_FILE_PATH", "")),
     )
     # parser.add_argument("--change_param_names", type=str, default=os.getenv("CHANGE_PARAM_NAMES", "UGW,NOF"))
-    parser.add_argument(
-        "--simulate_target_data",
-        action="store_true",
-        help="Whether to simulate target data",
-    )
+    # parser.add_argument(
+    #     "--simulate_target_data",
+    #     action="store_true",
+    #     help="Whether to simulate target data",
+    # )
     parser.add_argument(
         "--csv_file_path",
         type=str,
-        default=os.getenv("CSV_FILE_PATH", ""),
+        default=os.path.join(current_dir, os.getenv("CSV_FILE_PATH", "")),
     )
     ### New
     parser.add_argument("--vds", type=float, default=float(os.getenv("VDS", 0.5)))
@@ -103,15 +104,13 @@ if __name__ == "__main__":
             env=EEHEMTEnv_Measure_VDS,
             env_config={
                 "va_file_path": args.va_file_path,
-                # "tunable_params_config": tunable_params_config,
-                # "change_param_names": args.change_param_names,
-                "simulate_target_data": args.simulate_target_data,
+                # "simulate_target_data": args.simulate_target_data,
                 "csv_file_path": args.csv_file_path,
-                "vds": args.vds,
+                # "vds": args.vds,
                 # "test_modified": args.test_modified,
                 "reduce_obs_err_dim": args.reduce_obs_err_dim,
                 "reward_norm": args.reward_norm,
-                "use_stagnation": args.use_stagnation,
+                # "use_stagnation": args.use_stagnation,
             },
         )
         .env_runners(
@@ -152,7 +151,7 @@ if __name__ == "__main__":
     #     reuse_actors=True,
     # )
 
-    checkpoint_dir = os.getenv("CHECKPOINT_DIR", "")
+    checkpoint_dir = os.path.join(current_dir, os.getenv("CHECKPOINT_DIR", ""))
     stopping_criteria = {"training_iteration": args.n_iterations}
     ckpt_config = tune.CheckpointConfig(
         num_to_keep=5,

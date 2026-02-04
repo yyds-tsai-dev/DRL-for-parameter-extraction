@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -137,7 +138,7 @@ def plot_all_lg_iv_curve(
     print(f"==== I-V curve plot saved in {save_path} ====")
 
 
-def plot_all_ugw_n_iv_curve_colormap(
+def plot_all_condition_iv_curve(
     ugw_n_values: list,
     plot_data: dict,
     plot_dir: str,
@@ -238,9 +239,13 @@ class PlotCurve(DefaultCallbacks):
 
     def __init__(self):
         super().__init__()
-        self.plot_dir = os.getenv("PLOT_DIR", "result/iv-curve")
+        base_plot_dir = os.getenv("PLOT_DIR", "result/iv-curve")
+        algo_name = os.getenv("ALGO_NAME", "ppo")
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        self.plot_dir = os.path.join(base_plot_dir, algo_name, today_date)
         if not os.path.exists(self.plot_dir):
             os.makedirs(self.plot_dir, exist_ok=True)
+
         self.plot_data = None
         ### New
         self.ugw_n_values = None  # Store lg values for plotting
@@ -333,7 +338,7 @@ class PlotCurve(DefaultCallbacks):
             ### New
             if self.plot_cnt % PLOT_PERIOD == 0:
                 if self.ugw_n_values is not None:
-                    plot_all_ugw_n_iv_curve_colormap(
+                    plot_all_condition_iv_curve(
                         ugw_n_values=self.ugw_n_values,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
@@ -341,7 +346,7 @@ class PlotCurve(DefaultCallbacks):
                         log_y=False,
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
-                    plot_all_ugw_n_iv_curve_colormap(
+                    plot_all_condition_iv_curve(
                         ugw_n_values=self.ugw_n_values,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
@@ -349,7 +354,7 @@ class PlotCurve(DefaultCallbacks):
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
                 elif self.vds_values is not None:
-                    plot_all_ugw_n_iv_curve_colormap(
+                    plot_all_condition_iv_curve(
                         ugw_n_values=self.vds_values,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,
@@ -357,7 +362,7 @@ class PlotCurve(DefaultCallbacks):
                         log_y=False,
                         plot_cnt=self.plot_cnt // PLOT_PERIOD,
                     )
-                    plot_all_ugw_n_iv_curve_colormap(
+                    plot_all_condition_iv_curve(
                         ugw_n_values=self.vds_values,
                         plot_data=self.plot_data,  # type: ignore
                         plot_dir=self.plot_dir,

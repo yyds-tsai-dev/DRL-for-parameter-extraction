@@ -1,3 +1,9 @@
-echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf && echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/blacklist-nouveau.conf && sudo update-initramfs -u && sudo modprobe -r nouveau && sudo modprobe nouveau && sudo apt-get update && sudo apt-get install libc-dev -y && sudo apt-get install linux-headers-$(uname -r) -y && wget https://tw.download.nvidia.com/tesla/575.57.08/NVIDIA-Linux-x86_64-575.57.08.run && sudo sh NVIDIA-Linux-x86_64-575.57.08.run --accept-license --no-questions --dkms -s
-export PYTHONWARNINGS="ignore::DeprecationWarning"
-export RAY_DISABLE_DOCKER_CPU_WARNING=1
+#!/bin/bash
+
+cat /etc/os-release
+chsh -s /bin/bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+source .venv/bin/activate
+conda deactivate
+uv run train_ppo_tune.py --reward_norm --n_iterations 200 || echo "Initializing script failed" \
