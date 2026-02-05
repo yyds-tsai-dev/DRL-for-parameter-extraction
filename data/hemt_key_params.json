@@ -64,10 +64,20 @@
         "max": 0.15,
         "factor": 0.003
     },
+    "DVgoVto": {
+        "min": 0.01,
+        "max": 0.3,
+        "factor": 0.006
+    },
     "Vgo": {
         "min": -0.75,
         "max": -0.3,
         "factor": 0.01
+    },
+    "Gdbm": {
+        "min": 1e-07,
+        "max": 1e-06,
+        "factor": 2e-08
     },
     "Vdso": {
         "min": 1.0,

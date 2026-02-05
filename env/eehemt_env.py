@@ -77,7 +77,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.vgs = measured_df["vg"].values
         self.n_vgs = len(self.vgs)
         print(f"==== Using Vgs values: {self.vgs} ====")
-        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:6]
+        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:11] + [1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
         self.n_vds = len(self.vds)
         # print(
         #     f"==== Using Vds values: {', '.join(map(str, self.vds))} ===="
@@ -87,18 +87,19 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         )
 
         # === Init & Target Params (Including key) Initialization ===
+        self.random_init = config.get("random_init", False)
+        print(
+            f"\n==== Random initialization of parameters is {'enabled' if self.random_init else 'disabled'} ====\n"
+        )
         self.init_params = {
             name: float(param.default)
             for name, param in self.eehemt_model.modelcard.items()
         }
-        self.init_params["DVcoVgo"] = 0.0  # Initial DVcoVgo = 0.0V
-        # for name in key_params_names:
-        #     min_val = key_params_config[name]["min"]
-        #     max_val = key_params_config[name]["max"]
-        #     self.init_params[name] = float(np.random.uniform(min_val, max_val))
-        #     print(
-        #         f"==== {name} initialized to random value: {self.init_params[name]} ===="
-        #     )
+        if key_params_config.get("DVcoVgo"):
+            self.init_params["DVcoVgo"] = key_params_config["DVcoVgo"]["min"]  # Initial DVcoVgo = 0.001V
+
+        if key_params_config.get("DVgoVto"):
+            self.init_params["DVgoVto"] = key_params_config["DVgoVto"]["min"]  # Initial DVgoVto = 0.01V
 
         self.current_params = self.init_params.copy()
         self.KEY_PARAMS_MIN = np.array(
@@ -117,7 +118,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             if len(filtered_data) == self.n_vgs:
                 self.i_meas_dict[vd] = filtered_data
         self.all_i_meas_matrix = np.array([self.i_meas_dict[vd] for vd in self.vds])
-        self.all_i_meas_log_matrix = np.log10(self.all_i_meas_matrix + EPSILON)
+        self.add_log_err = config.get("add_log_err", False)
+        print(
+            f"\n==== Log error in observation is {'enabled' if self.add_log_err else 'disabled'} ====\n"
+        )
+        if self.add_log_err:
+            self.all_i_meas_log_matrix = np.log10(self.all_i_meas_matrix + EPSILON)
 
         # === Action Space Definition ===
         self.action_space = Box(
@@ -131,7 +137,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         # === Observation Space Definition ===
         # Observation space contains: [P_t, ΔP_{t-1}, E_t (error vector feature)]
-        self.reduce_obs_err_dim = config.get("reduce_obs_err_dim", True)
+        self.reduce_obs_err_dim = config.get("reduce_obs_err_dim", False)
         print(
             f"\n==== Reduce observation error dimension is {'enabled' if self.reduce_obs_err_dim else 'disabled'} ====\n"
         )
@@ -143,8 +149,10 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         if self.reduce_obs_err_dim:
             total_err_len = int(os.getenv("N_FEATURES_PER_CURVE", 6)) * self.n_vds
-        else:
+        elif self.add_log_err:
             total_err_len = self.n_vgs * self.n_vds * 2  # 2 for linear & log error
+        else:
+            total_err_len = self.n_vgs * self.n_vds
         err_vector_low = np.full(total_err_len, -np.inf)
         err_vector_high = np.full(total_err_len, np.inf)
 
@@ -162,9 +170,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.NRMSE_THRESHOLD = float(os.getenv("NRMSE_THRESHOLD", 80.0))
         self.current_step = 0
 
-        # === Error Initialization ===
+        # === Reward & Error Initialization ===
         self.prev_nrmse = -1.0  # For reward calculation
-        self.reward_norm = config.get("reward_norm", True)
+        self.reward_norm = config.get("reward_norm", False)
         print(
             f"\n==== Reward normalization is {'enabled' if self.reward_norm else 'disabled'} ====\n"
         )
@@ -264,7 +272,10 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         """
         i_sim_results = []
         sim_params =  {k: float(v) for k, v in self.current_params.items()}
-        sim_params.pop("DVcoVgo", None)
+        if sim_params.get("DVcoVgo"):
+            sim_params.pop("DVcoVgo", None)
+        if sim_params.get("DVgoVto"):
+            sim_params.pop("DVgoVto", None)
         # print(
         #     f"Step: {self.current_step}, Simulating with params: { {k: v for k, v in sim_params.items() if k in key_params_names} }"
         # )
@@ -290,9 +301,11 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         all_i_sim_matrix = np.array(i_sim_results)
         linear_err = self.all_i_meas_matrix - all_i_sim_matrix
-        log_err = self.all_i_meas_log_matrix - np.log10(all_i_sim_matrix + EPSILON)
-
-        all_err_matrix = np.stack((linear_err, log_err), axis=-1)
+        if self.add_log_err:
+            log_err = self.all_i_meas_log_matrix - np.log10(all_i_sim_matrix + EPSILON)
+            all_err_matrix = np.stack((linear_err, log_err), axis=-1)
+        else:
+            all_err_matrix = linear_err
         concat_err_vector = all_err_matrix.flatten().astype(np.float32)
 
         # Calculate NRMSE for each I-V curve (each row).
@@ -369,11 +382,25 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             tuple: A tuple containing the initial observation and info dictionary.
         """
         super().reset(seed=seed)
-        self.current_params = self.init_params.copy()
+        if options and "random_init" in options:
+            self.random_init = options["random_init"]
+
+        if self.random_init:
+            for i, name in enumerate(key_params_names):
+                min_val = self.KEY_PARAMS_MIN[i]
+                max_val = self.KEY_PARAMS_MAX[i]
+                self.current_params[name] = float(np.random.uniform(min_val, max_val))
+                # print(f"DEBUG: {name} initialized to {self.current_params[name]}")
+        else:
+            self.current_params = self.init_params.copy()
         # Vgo = Vco - DVcoVgo
         if "Vco" in self.current_params and "DVcoVgo" in self.current_params:
             self.current_params["Vgo"] = (
                 self.current_params["Vco"] - self.current_params["DVcoVgo"]
+            )
+        if "Vco" in self.current_params and "DVgoVto" in self.current_params:
+            self.current_params["Vto"] = (
+                self.current_params["Vco"] - self.current_params["DVcoVgo"] - self.current_params["DVgoVto"]
             )
 
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
@@ -424,6 +451,10 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         if "Vco" in self.current_params and "DVcoVgo" in self.current_params:
             self.current_params["Vgo"] = (
                 self.current_params["Vco"] - self.current_params["DVcoVgo"]
+            )
+        if "Vco" in self.current_params and "DVgoVto" in self.current_params:
+            self.current_params["Vto"] = (
+                self.current_params["Vco"] - self.current_params["DVcoVgo"] - self.current_params["DVgoVto"]
             )
         self.prev_params_delta = dict(zip(key_params_names, key_params_delta))
 

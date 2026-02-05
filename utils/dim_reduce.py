@@ -11,9 +11,6 @@ def get_err_features(
     """
     Extracts error features from the error vector based on the defined voltage regions.
     """
-    # max_current = 0.0
-    # for curve in i_meas_dict.values():
-    #     max_current = max(max_current, np.max(curve))
 
     len_single_curve = len(vgs)
     all_features = []
@@ -42,6 +39,7 @@ def get_err_features(
         all_features.extend(features_single_curve)
 
     final_features = np.array(all_features, dtype=np.float32)
+    # for compressing dynamic range
     final_features = np.sign(final_features) * np.log1p(np.abs(final_features))
 
     return final_features

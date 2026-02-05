@@ -33,9 +33,11 @@ if __name__ == "__main__":
         type=str,
         default=os.path.join(current_dir, os.getenv("CSV_FILE_PATH", "")),
     )
+    parser.add_argument("--random_init", action="store_true")
+    parser.add_argument("--reduce_obs_err_dim", action="store_true")
+    parser.add_argument("--add_log_err", action="store_true")
     parser.add_argument("--reward_norm", action="store_true")
     parser.add_argument("--use_stagnation", action="store_true")
-    parser.add_argument("--reduce_obs_err_dim", action="store_true")
 
     # === Env runner arguments ===
     parser.add_argument(
@@ -63,10 +65,16 @@ if __name__ == "__main__":
         "--n_iterations", type=int, default=int(os.getenv("N_ITERATIONS", 100))
     )  # 100 -> 50, 幾個 sample-train period
     parser.add_argument(
-        "--episode_reward_mean",
-        type=float,
-        default=float(os.getenv("EPISODE_REWARD_MEAN", 5.0)),
-    )  # The mean reward to stop training
+        "--restore_path", 
+        type=str, 
+        default=os.getenv("RESTORE_PATH", ""),
+        help="Path to the experiment directory to restore from"
+    )
+    # parser.add_argument(
+    #     "--episode_reward_mean",
+    #     type=float,
+    #     default=float(os.getenv("EPISODE_REWARD_MEAN", 5.0)),
+    # )  # The mean reward to stop training
 
     # === Learner arguments ===
     device_count = th.cuda.device_count()
@@ -103,9 +111,11 @@ if __name__ == "__main__":
                 "va_file_path": args.va_file_path,
                 # "simulate_target_data": args.simulate_target_data,
                 "csv_file_path": args.csv_file_path,
+                "random_init": args.random_init,
                 "reduce_obs_err_dim": args.reduce_obs_err_dim,
+                "add_log_err": args.add_log_err,
                 "reward_norm": args.reward_norm,
-                # "use_stagnation": args.use_stagnation,
+                "use_stagnation": args.use_stagnation,
             },
         )
         .env_runners(
@@ -146,32 +156,42 @@ if __name__ == "__main__":
     #     reuse_actors=True,
     # )
 
-    # algo_name = os.getenv("ALGO_NAME", "ppo")
     checkpoint_dir = os.path.join(current_dir, os.getenv("CHECKPOINT_DIR", ""))
-    stopping_criteria = {"training_iteration": args.n_iterations}
-    ckpt_config = tune.CheckpointConfig(
-        num_to_keep=5,
-        checkpoint_score_attribute="episode_reward_mean",
-        checkpoint_score_order="max",
-    )
-    run_config = tune.RunConfig(
-        name="EEHEMT_PPO",
-        storage_path=checkpoint_dir,
-        stop=stopping_criteria,
-        checkpoint_config=ckpt_config,
-        callbacks=[
-            WandbLoggerCallback(
-                project="PPO_for_multi_I-V_curves_fitting_in_EEHEMT",
-                api_key=os.getenv("WANDB_API_KEY", default=""),
-            )
-        ],
-    )
-
-    tuner = tune.Tuner(
-        "PPO",
-        param_space=config,
-        run_config=run_config,
-    )
+    if args.restore_path:
+        print(f"\n==== Restoring training from: {args.restore_path} ====")
+        
+        tuner = tune.Tuner.restore(
+            path=args.restore_path,
+            trainable="PPO",
+            resume_unfinished=True,
+            resume_errored=True,
+            param_space=config,
+        )
+    else:
+        print("\n==== Starting a NEW training run ====")
+        stopping_criteria = {"training_iteration": args.n_iterations}
+        ckpt_config = tune.CheckpointConfig(
+            num_to_keep=5,
+            checkpoint_score_attribute="episode_reward_mean",
+            checkpoint_score_order="max",
+        )
+        run_config = tune.RunConfig(
+            name="EEHEMT_PPO",
+            storage_path=checkpoint_dir,
+            stop=stopping_criteria,
+            checkpoint_config=ckpt_config,
+            callbacks=[
+                WandbLoggerCallback(
+                    project="PPO_for_multi_I-V_curves_fitting_in_EEHEMT",
+                    api_key=os.getenv("WANDB_API_KEY", default=""),
+                )
+            ],
+        )
+        tuner = tune.Tuner(
+            "PPO",
+            param_space=config,
+            run_config=run_config,
+        )
     results = tuner.fit()
     print("\n==== Training completed. ====")
 
