@@ -127,9 +127,15 @@ if __name__ == "__main__":
             num_epochs=args.num_epochs,
             minibatch_size=args.minibatch_size,
             lr=args.lr * num_learners,
-            ### New
             entropy_coeff=args.entropy_coeff,  # type: ignore
             grad_clip=args.grad_clip,
+            # model={
+            #     "fcnet_hiddens": [512, 512],
+                # "post_fcnet_hiddens": [512],
+                # "vf_share_layers": False,
+            # }
+            vf_loss_coeff=0.1,
+            vf_clip_param=20.0,
         )
         .learners(
             num_learners=num_learners,

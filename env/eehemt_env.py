@@ -77,7 +77,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.vgs = measured_df["vg"].values
         self.n_vgs = len(self.vgs)
         print(f"==== Using Vgs values: {self.vgs} ====")
-        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:11] + [1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:11] + [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
         self.n_vds = len(self.vds)
         # print(
         #     f"==== Using Vds values: {', '.join(map(str, self.vds))} ===="
@@ -118,6 +118,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             if len(filtered_data) == self.n_vgs:
                 self.i_meas_dict[vd] = filtered_data
         self.all_i_meas_matrix = np.array([self.i_meas_dict[vd] for vd in self.vds])
+        self.all_i_meas_asinh_matrix = np.arcsinh(self.all_i_meas_matrix)
         self.add_log_err = config.get("add_log_err", False)
         print(
             f"\n==== Log error in observation is {'enabled' if self.add_log_err else 'disabled'} ====\n"
@@ -129,10 +130,17 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.action_space = Box(
             low=-1.0, high=1.0, shape=(n_key_params,), dtype=np.float32
         )
+        # self.action_space = Box(
+        #     low=0.0, high=1.0, shape=(n_key_params,), dtype=np.float32
+        # )
+        # self.ACTION_FACTORS = np.array((config["max"] - config["min"]) * scaling_ratio
+        #     [config["factor"] for config in key_params_config.values()],
+        #     dtype=np.float32,
+        # )  # Linear transform better than independent function transform
         self.ACTION_FACTORS = np.array(
-            [config["factor"] for config in key_params_config.values()],
+            [(config["max"] - config["min"]) * 0.01 for config in key_params_config.values()],
             dtype=np.float32,
-        )  # Linear transform better than independent function transform
+        )
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
         # === Observation Space Definition ===
@@ -162,6 +170,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         high_bounds = np.concatenate(
             [param_high, prev_params_delta_high, err_vector_high]
         ).astype(np.float32)
+        # low_bounds = np.concatenate(
+        #     [param_low, err_vector_low]
+        # ).astype(np.float32)
+        # high_bounds = np.concatenate(
+        #     [param_high, err_vector_high]
+        # ).astype(np.float32)
         self.observation_space = Box(low=low_bounds, high=high_bounds, dtype=np.float32)
 
         # === Episode Control ===
@@ -171,7 +185,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.current_step = 0
 
         # === Reward & Error Initialization ===
-        self.prev_nrmse = -1.0  # For reward calculation
+        # self.prev_nrmse = -1.0  # For reward calculation
         self.reward_norm = config.get("reward_norm", False)
         print(
             f"\n==== Reward normalization is {'enabled' if self.reward_norm else 'disabled'} ====\n"
@@ -184,6 +198,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             self.REWARD_ALPHA = float(
                 os.getenv("REWARD_ALPHA", 0.01)
             )  # Running average decay factor
+        self.huber_delta = float(os.getenv("HUBER_DELTA", 1.0))  # Huber loss delta
 
         # === Stagnation (停滯) detection settings ===
         # self.use_stagnation = config.get("use_stagnation", True)
@@ -234,6 +249,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         obs = np.concatenate(
             [current_key_values, prev_params_delta, err_features]
         ).astype(np.float32)
+        # obs = np.concatenate(
+        #     [current_key_values, err_features]
+        # ).astype(np.float32)
         # if np.any(np.isnan(obs)) or np.any(np.isinf(obs)):
         #     print("Warning: NaN or Inf detected in obs, cleaning it.")
         #     obs = np.nan_to_num(obs, nan=0.0, posinf=1e5, neginf=-1e5)
@@ -387,9 +405,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         if self.random_init:
             for i, name in enumerate(key_params_names):
-                min_val = self.KEY_PARAMS_MIN[i]
-                max_val = self.KEY_PARAMS_MAX[i]
-                self.current_params[name] = float(np.random.uniform(min_val, max_val))
+                self.current_params[name] = float(np.random.uniform(self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i]))
                 # print(f"DEBUG: {name} initialized to {self.current_params[name]}")
         else:
             self.current_params = self.init_params.copy()
@@ -406,14 +422,15 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
         self.current_step = 0
-        self.stagnation_cnt = 0
+        # if self.use_stagnation:
+        #     self.stagnation_cnt = 0
 
         # === Run initial simulation for all (Ugw, NOF) conditions & Calculate RMSPE ===
         _, init_err_vector, init_nrmse_vals = self._run_all_curve_condition_sim()
         # avg_init_rmspe = np.mean(init_rmspe_vals)
         ### New
         avg_init_nrmse = np.mean(init_nrmse_vals)
-        self.prev_nrmse = avg_init_nrmse
+        # self.prev_nrmse = avg_init_nrmse
 
         observation = self._get_obs(init_err_vector)
         info = self._get_info(avg_init_nrmse)
@@ -440,6 +457,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         key_params_delta = self._transform_action(action)
         for i, name in enumerate(key_params_names):
             self.current_params[name] += key_params_delta[i]
+            # self.current_params[name] = self.KEY_PARAMS_MIN[i] + action[i] * (self.KEY_PARAMS_MAX[i] - self.KEY_PARAMS_MIN[i])
 
             self.current_params[name] = np.clip(
                 self.current_params[name],
@@ -466,10 +484,20 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # === Calculate NRMSE for reward, termination conditions, and info ===
         current_nrmse = np.mean(nrmse_vals)
         # raw_reward = self.prev_nrmse - current_nrmse
-        raw_reward = np.clip(-np.log10((current_nrmse / 100.0) + EPSILON), -10.0, 10.0)
+        # raw_reward = np.clip(-np.log10((current_nrmse / 100.0) + EPSILON), -10.0, 10.0)
+
+        diff = np.arcsinh(all_i_sim_matrix) - self.all_i_meas_asinh_matrix
+        abs_diff = np.abs(diff)
+        current_loss = np.where(
+            abs_diff <= self.huber_delta,
+            0.5 * diff**2, 
+            self.huber_delta * (abs_diff - 0.5 * self.huber_delta)
+        )
+        raw_reward = np.clip(-np.log10(np.mean(current_loss) + EPSILON) / 20.0, -2.0, 2.0)  # Scale down for stability
+
         reward = self._normalize_reward(float(raw_reward))
 
-        self.prev_nrmse = current_nrmse
+        # self.prev_nrmse = current_nrmse
 
         # === Get the next observation and info ===
         observation = self._get_obs(current_err_vector)
