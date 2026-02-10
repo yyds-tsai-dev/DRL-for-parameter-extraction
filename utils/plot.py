@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 from dotenv import load_dotenv
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
@@ -42,42 +43,39 @@ def plot_all_condition_iv_curve(
     # Using np.linspace(0.5, 1, ...) ensures colors are not too light.
     num_curves = len(curve_condition_values)
     target_colors = plt.get_cmap("rainbow")(np.linspace(0.5, 1, num_curves))
-    # initial_colors = plt.get_cmap("Greens")(np.linspace(0.5, 1, num_curves))
     current_colors = plt.get_cmap("rainbow")(np.linspace(0.5, 1, num_curves))
 
+    vds_legend_handles = []
+    vds_legend_labels = []
+
     # === Iterate through each (Ugw, NOF) pair and plot with gradient colors ===
-    for i, ugw_n in enumerate(curve_condition_values):
-        label_target = "Experiments" if i == len(curve_condition_values) - 1 else None
-        # label_initial = "Initial" if i == len(curve_condition_values) - 1 else None
-        label_current = "Modeling" if i == len(curve_condition_values) - 1 else None
+    for i, condition_value in enumerate(curve_condition_values):
+        # label_target = "Experiments" if i == len(curve_condition_values) - 1 else None
+        # label_current = "Modeling" if i == len(curve_condition_values) - 1 else None
+        
         # 1. Plot the target data (Measured) using the 'Blues' colormap.
         ax.plot(
             vgs,
-            i_meas_dict[ugw_n],
+            i_meas_dict[condition_value],
             marker="o",
             linestyle="None",
             color=target_colors[i],
-            label=label_target,
+            # label=label_target,
             ms=3,
         )
 
-        # 2. Plot the initial simulation using the 'Greens' colormap.
-        # ax.plot(
-        #     vgs,
-        #     i_sim_init_matrix[i, :],
-        #     linestyle="--",  # Set line style to dashed
-        #     color=initial_colors[i],
-        #     label=label_initial,
-        # )
-
-        # 3. Plot the current simulation using the 'Reds' colormap.
+        # 2. Plot the current simulation using the 'Reds' colormap.
         ax.plot(
             vgs,
             i_sim_current_matrix[i, :],
             linestyle="-",  # Set line style to solid
             color=current_colors[i],
-            label=label_current,
+            # label=label_current,
         )
+
+        vds_legend_handles.append(Line2D([0], [0], color=current_colors[i], lw=2))
+        vds_legend_labels.append(f"{condition_value}V")
+
 
     # === Set the plot style and labels ===
     ax.set_title(f"I-V Curve Comparison for All {', '.join(CURVE_CONDITION_NAMES)} Values")
@@ -95,7 +93,33 @@ def plot_all_condition_iv_curve(
         )
 
     ax.grid(True, which="both", ls="--", alpha=0.7)
-    ax.legend(loc="best")
+    # ax.legend(loc="best")
+    # 1. Main Legend: Experiments (Points) & Modeling (Lines)
+    legend_elements_main = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="black",
+            label="Experiments",
+            linestyle="None",
+            markersize=5,
+        ),
+        Line2D([0], [0], color="black", label="Modeling", linestyle="-", lw=2),
+    ]
+    legend1 = ax.legend(handles=legend_elements_main, loc="upper left")
+    ax.add_artist(legend1)
+
+    # 2. Vds Legend (Right Side)
+    legend_title = CURVE_CONDITION_NAMES[0] if CURVE_CONDITION_NAMES else "Vds"
+    ax.legend(
+        handles=vds_legend_handles,
+        labels=vds_legend_labels,
+        title=legend_title,
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        borderaxespad=0.0,
+    )
 
     # === Save the plot ===
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
@@ -204,7 +228,12 @@ class PlotCurve(DefaultCallbacks):
             nrmse = last_info["nrmse"]
             if nrmse < self.min_nrmse:
                 self.min_nrmse = nrmse
-                
+
+            metrics_logger.log_value(
+                "last_nrmse",
+                nrmse,
+                reduce="mean",
+            )
             metrics_logger.log_value(
                 "min_nrmse",
                 self.min_nrmse,
