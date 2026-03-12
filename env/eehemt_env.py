@@ -77,7 +77,25 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.vgs = measured_df["vg"].values
         self.n_vgs = len(self.vgs)
         print(f"==== Using Vgs values: {self.vgs} ====")
-        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:11] + [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
+        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:11] + [
+            1.5,
+            2.0,
+            2.5,
+            3.0,
+            3.5,
+            4.0,
+            4.5,
+        ]
+        # self.vds =  [
+        #     1.0,
+        #     1.5,
+        #     2.0,
+        #     2.5,
+        #     3.0,
+        #     3.5,
+        #     4.0,
+        #     4.5,
+        # ]
         self.n_vds = len(self.vds)
         # print(
         #     f"==== Using Vds values: {', '.join(map(str, self.vds))} ===="
@@ -96,10 +114,17 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             for name, param in self.eehemt_model.modelcard.items()
         }
         if key_params_config.get("DVcoVgo"):
-            self.init_params["DVcoVgo"] = key_params_config["DVcoVgo"]["min"]  # Initial DVcoVgo = 0.001V
-
+            self.init_params["DVcoVgo"] = key_params_config["DVcoVgo"][
+                "min"
+            ]  # Initial DVcoVgo = 0.001V
         if key_params_config.get("DVgoVto"):
-            self.init_params["DVgoVto"] = key_params_config["DVgoVto"]["min"]  # Initial DVgoVto = 0.01V
+            self.init_params["DVgoVto"] = key_params_config["DVgoVto"][
+                "min"
+            ]  # Initial DVgoVto = 0.01V
+        if key_params_config.get("DVtsoVto"):
+            self.init_params["DVtsoVto"] = key_params_config["DVtsoVto"][
+                "min"
+            ]  # Initial DVtsoVto = 0.01V
 
         self.current_params = self.init_params.copy()
         self.KEY_PARAMS_MIN = np.array(
@@ -138,7 +163,10 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         #     dtype=np.float32,
         # )  # Linear transform better than independent function transform
         self.ACTION_FACTORS = np.array(
-            [(config["max"] - config["min"]) * 0.01 for config in key_params_config.values()],
+            [
+                (config["max"] - config["min"]) * 0.01
+                for config in key_params_config.values()
+            ],
             dtype=np.float32,
         )
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
@@ -199,6 +227,17 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 os.getenv("REWARD_ALPHA", 0.01)
             )  # Running average decay factor
         self.huber_delta = float(os.getenv("HUBER_DELTA", 1.0))  # Huber loss delta
+
+        # === External Resistance for IR Drop Correction ===
+        # Internal Rs/Rd are modelcard params handled by the EEHEMT model itself.
+        # Rs_ext/Rd_ext are purely external circuit resistances the model doesn't know about.
+        self.Rs_ext = float(os.getenv("RS_EXT", 0.0))
+        self.Rd_ext = float(os.getenv("RD_EXT", 0.0))
+        self.ir_drop_n_iter = int(os.getenv("IR_DROP_N_ITER", 2))
+        print(
+            f"==== IR Drop: Rs_ext={self.Rs_ext} Ω, Rd_ext={self.Rd_ext} Ω, "
+            f"n_iter={self.ir_drop_n_iter} ===="
+        )
 
         # === Stagnation (停滯) detection settings ===
         # self.use_stagnation = config.get("use_stagnation", True)
@@ -289,24 +328,48 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 - A numpy array of NRMSE values for each (Ugw, NOF) condition.
         """
         i_sim_results = []
-        sim_params =  {k: float(v) for k, v in self.current_params.items()}
+        sim_params = {k: float(v) for k, v in self.current_params.items()}
         if sim_params.get("DVcoVgo"):
             sim_params.pop("DVcoVgo", None)
         if sim_params.get("DVgoVto"):
             sim_params.pop("DVgoVto", None)
+        if sim_params.get("DVtsoVto"):
+            sim_params.pop("DVtsoVto", None)
         # print(
         #     f"Step: {self.current_step}, Simulating with params: { {k: v for k, v in sim_params.items() if k in key_params_names} }"
         # )
-        for vd in self.vds:
-            current_vds_vector = np.full_like(self.vgs, vd)
-            current_sweep_bias = {"br_gisi": self.vgs, "br_disi": current_vds_vector}
+        # Rs/Rd in va file only contribute I(d,di) and I(s,si) branch currents.
+        # When calling eval() with intrinsic voltages (br_gisi/br_disi), the model
+        # does NOT automatically apply Rs/Rd drops, so we must include them here.
+        Rs_total = float(self.current_params["Rs"]) + self.Rs_ext
+        Rd_total = float(self.current_params["Rd"]) + self.Rd_ext
+        for vd_app in self.vds:
+            # CURVE_CONDITION_NAMES[0] = "Vds" is a local analog variable in the VA file,
+            # not a modelcard parameter, so it is not in sim_params and this line has no effect.
+            # sim_params[CURVE_CONDITION_NAMES[0]] = vd_app
 
-            sim_params[CURVE_CONDITION_NAMES[0]] = vd
-            i_sim_single_curve = self.eehemt_model.functions["Ids"].eval(
-                temperature=TEMPERATURE,
-                voltages=current_sweep_bias,
-                **sim_params,
-            )
+            # Vectorized fixed-point iteration for IR Drop correction.
+            # R_tot = modelcard Rs/Rd (external-to-intrinsic) + circuit Rs_ext/Rd_ext
+            I_est = np.zeros(self.n_vgs, dtype=np.float64)
+            for _ in range(self.ir_drop_n_iter):
+                vs_node = I_est * Rs_total  # shape: (n_vgs,)
+                vd_node = vd_app - I_est * Rd_total  # shape: (n_vgs,)
+                vgs_int = self.vgs - vs_node  # shape: (n_vgs,)
+                vds_int = vd_node - vs_node  # shape: (n_vgs,)
+                vgd_int = vgs_int - vds_int  # shape: (n_vgs,)
+                I_est = np.asarray(
+                    self.eehemt_model.functions["I_total"].eval(
+                        temperature=TEMPERATURE,
+                        voltages={
+                            "br_gisi": vgs_int,
+                            "br_disi": vds_int,
+                            "br_gidi": vgd_int,
+                        },
+                        **sim_params,
+                    ),
+                ).ravel()
+
+            i_sim_single_curve = I_est
 
             if np.any(np.isnan(i_sim_single_curve)) or np.any(
                 np.isinf(i_sim_single_curve)
@@ -405,7 +468,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         if self.random_init:
             for i, name in enumerate(key_params_names):
-                self.current_params[name] = float(np.random.uniform(self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i]))
+                self.current_params[name] = float(
+                    np.random.uniform(self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i])
+                )
                 # print(f"DEBUG: {name} initialized to {self.current_params[name]}")
         else:
             self.current_params = self.init_params.copy()
@@ -416,7 +481,13 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             )
         if "Vco" in self.current_params and "DVgoVto" in self.current_params:
             self.current_params["Vto"] = (
-                self.current_params["Vco"] - self.current_params["DVcoVgo"] - self.current_params["DVgoVto"]
+                self.current_params["Vco"]
+                - self.current_params["DVcoVgo"]
+                - self.current_params["DVgoVto"]
+            )
+        if "Vtso" in self.current_params and "DVtsoVto" in self.current_params:
+            self.current_params["Vto"] = (
+                self.current_params["Vtso"] - self.current_params["DVtsoVto"]
             )
 
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
@@ -472,7 +543,13 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             )
         if "Vco" in self.current_params and "DVgoVto" in self.current_params:
             self.current_params["Vto"] = (
-                self.current_params["Vco"] - self.current_params["DVcoVgo"] - self.current_params["DVgoVto"]
+                self.current_params["Vco"]
+                - self.current_params["DVcoVgo"]
+                - self.current_params["DVgoVto"]
+            )
+        if "Vtso" in self.current_params and "DVtsoVto" in self.current_params:
+            self.current_params["Vto"] = (
+                self.current_params["Vtso"] - self.current_params["DVtsoVto"]
             )
         self.prev_params_delta = dict(zip(key_params_names, key_params_delta))
 
@@ -488,12 +565,30 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         diff = np.arcsinh(all_i_sim_matrix) - self.all_i_meas_asinh_matrix
         abs_diff = np.abs(diff)
-        current_loss = np.where(
+        loss_linear = np.where(
             abs_diff <= self.huber_delta,
-            0.5 * diff**2, 
-            self.huber_delta * (abs_diff - 0.5 * self.huber_delta)
+            0.5 * diff**2,
+            self.huber_delta * (abs_diff - 0.5 * self.huber_delta),
         )
-        raw_reward = np.clip(-np.log10(np.mean(current_loss) + EPSILON) / 20.0, -2.0, 2.0)  # Scale down for stability
+        # Log domain Huber loss (subthreshold)
+        # log_sim = np.log10(np.abs(all_i_sim_matrix) + EPSILON)
+        # log_meas = np.log10(np.abs(self.all_i_meas_matrix) + EPSILON)
+        # diff_log = log_sim - log_meas
+        # abs_diff_log = np.abs(diff_log)
+        # loss_log = np.where(
+        #     abs_diff_log <= self.huber_delta,
+        #     0.5 * diff_log**2,
+        #     self.huber_delta * (abs_diff_log - 0.5 * self.huber_delta),
+        # )
+
+        # log_loss_weight = float(os.getenv("LOG_LOSS_WEIGHT", 2.0))
+        # combined_loss = np.mean(loss_linear) + log_loss_weight * np.mean(loss_log)
+
+        raw_reward = np.clip(
+            -np.log10(np.mean(loss_linear) + EPSILON) / 20.0,
+            float(os.getenv("REWARD_MIN", -2.0)),
+            float(os.getenv("REWARD_MAX", 2.0)),
+        )  # Scale down for stability
 
         reward = self._normalize_reward(float(raw_reward))
 

@@ -26,7 +26,7 @@
     },
     "Gamma": {
         "min": 0.05,
-        "max": 0.2,
+        "max": 0.3,
         "factor": 0.004
     },
     "Gmmax": {
@@ -67,6 +67,11 @@
     "DVgoVto": {
         "min": 0.01,
         "max": 0.3,
+        "factor": 0.006
+    },
+    "DVtsoVto": {
+        "min": 0.1,
+        "max": 0.6,
         "factor": 0.006
     },
     "Vgo": {

@@ -61,6 +61,7 @@ if __name__ == "__main__":
         "--entropy_coeff", type=float, default=float(os.getenv("ENTROPY_COEFF", 5e-3))
     )
     parser.add_argument("--grad_clip", type=float, default=1.0)
+    parser.add_argument("--vf_loss_coeff", type=float, default=float(os.getenv("VF_LOSS_COEFF", 0.1)))
     parser.add_argument(
         "--n_iterations", type=int, default=int(os.getenv("N_ITERATIONS", 100))
     )  # 100 -> 50, 幾個 sample-train period
@@ -134,7 +135,7 @@ if __name__ == "__main__":
                 # "post_fcnet_hiddens": [512],
                 # "vf_share_layers": False,
             # }
-            vf_loss_coeff=0.1,
+            vf_loss_coeff=args.vf_loss_coeff,
             vf_clip_param=20.0,
         )
         .learners(
