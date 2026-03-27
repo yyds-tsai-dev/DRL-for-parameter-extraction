@@ -1,6 +1,9 @@
 # 虛擬環境
 .venv/
 
+# VSCode 設定
+.vscode/
+
 # Python 暫存檔
 __pycache__/
 *.pyc
