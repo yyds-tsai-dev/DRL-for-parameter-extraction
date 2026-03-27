@@ -38,7 +38,7 @@ class EEHEMTModelHelper:
             for name, param in self.eehemt_model.modelcard.items()
         }
 
-    def get_modelcard(self) -> dict[str, float]:
+    def _get_modelcard(self) -> dict[str, float]:
         """Return a copy of current modelcard default parameters."""
         return self._modelcard.copy()
 
@@ -83,7 +83,7 @@ class EEHEMTModelHelper:
         available = ", ".join(sorted(self.eehemt_model.functions.keys()))
         raise KeyError(f"No Ids-like function found. Available functions: {available}")
 
-    def simulate_ids(
+    def _simulate_ids(
         self,
         vgs: np.ndarray,
         vds_voltage: float = 0.5,
@@ -129,7 +129,7 @@ class EEHEMTModelHelper:
         if modelcard_updates:
             merged_updates.update({k: float(v) for k, v in modelcard_updates.items()})
 
-        return self.simulate_ids(
+        return self._simulate_ids(
             vgs=vgs,
             vds_voltage=vds_voltage,
             curve_condition_value=curve_condition_value,
@@ -145,7 +145,7 @@ class EEHEMTModelHelper:
         save_name: str | None = None,
         log_y: bool = False,
     ) -> str:
-        """Plot simulated I-V curve (and optional measured curve) and save figure."""
+        """Plot target I-V curve (and optional measured curve) and save figure."""
         vgs_array = np.asarray(vgs, dtype=float)
         i_sim_array = np.asarray(i_sim, dtype=float)
 
@@ -173,7 +173,7 @@ class EEHEMTModelHelper:
 
         if i_meas_array is not None:
             ax.plot(vgs_array, i_meas_array, "o", ms=4, label="Measured")
-        ax.plot(vgs_array, i_sim_array, "-", lw=2, label="Simulated")
+        ax.plot(vgs_array, i_sim_array, "-", lw=2, label="Target")
 
         if log_y:
             ax.set_yscale("log")
@@ -193,12 +193,12 @@ class EEHEMTModelHelper:
         vgs: np.ndarray,
         vds_voltage: float = 0.5,
         curve_condition_value: float | None = None,
-        title: str = "EEHEMT Simulated I-V Curve",
+        title: str = "EEHEMT Target I-V Curve",
         save_name: str | None = None,
         log_y: bool = False,
         modelcard_updates: dict[str, float] | None = None,
     ) -> tuple[np.ndarray, str]:
-        """Load init params from JSON, simulate Ids, then save simulated I-V plot."""
+        """Load init params from JSON, simulate Ids, then save target I-V plot."""
         i_sim = self.simulate_ids_from_json_init(
             json_path=json_path,
             vgs=vgs,
