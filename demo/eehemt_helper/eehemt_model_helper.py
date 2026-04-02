@@ -37,6 +37,22 @@ class EEHEMTModelHelper:
             name: float(param.default)
             for name, param in self.eehemt_model.modelcard.items()
         }
+        self._loaded_init_param_keys: set[str] = set()
+        self._modelcard_sync_warned = False
+
+    def _sync_single_param(self, name: str, value: float) -> None:
+        """Synchronize one parameter to internal modelcard and VA model if writable."""
+        self._modelcard[name] = value
+
+        try:
+            self.eehemt_model.modelcard[name].default = value
+        except (AttributeError, TypeError):
+            if not self._modelcard_sync_warned:
+                print(
+                    "Warning: eehemt_model.modelcard default is read-only; "
+                    "using internal parameter cache for simulation."
+                )
+                self._modelcard_sync_warned = True
 
     def _get_modelcard(self) -> dict[str, float]:
         """Return a copy of current modelcard default parameters."""
@@ -44,7 +60,7 @@ class EEHEMTModelHelper:
 
     def print_params(self, param_names: list[str] | None = None) -> None:
         """Print selected parameters. If param_names is None, print all parameters."""
-        modelcard = self.get_modelcard()
+        modelcard = self._get_modelcard()
         names = param_names if param_names is not None else sorted(modelcard.keys())
 
         for name in names:
@@ -71,8 +87,92 @@ class EEHEMTModelHelper:
             raise ValueError(
                 "No valid 'init' values found in JSON for current modelcard"
             )
+        # Synchronize loaded parameters to both modelcard instances
+        for name, value in init_params.items():
+            self._sync_single_param(name, value)
+        self._loaded_init_param_keys = set(init_params.keys())
 
         return init_params
+
+    def update_modelcard(self, modelcard_updates: dict[str, float]) -> None:
+        """Update modelcard parameters in both self._modelcard and self.eehemt_model.modelcard.
+
+        Args:
+            modelcard_updates: Dictionary of parameter names and their new values.
+
+        Raises:
+            KeyError: If any parameter name is not found in the current modelcard.
+        """
+        # Validate all keys exist
+        invalid_keys = set(modelcard_updates.keys()) - set(self._modelcard.keys())
+        if invalid_keys:
+            raise KeyError(f"Parameter(s) not found in modelcard: {invalid_keys}")
+
+        # Update both modelcard instances
+        for name, value in modelcard_updates.items():
+            value_float = float(value)
+            self._sync_single_param(name, value_float)
+
+        print(f"Updated {len(modelcard_updates)} parameter(s) in modelcard.")
+
+    def save_params_to_json(
+        self, output_path: str, reference_json_path: str | None = None
+    ) -> str:
+        """Save currently loaded init parameters to a JSON file.
+
+        Only parameters loaded by load_init_params_from_json are saved.
+        If reference_json_path is provided, preserves min/max values from the reference file
+        and updates only the 'init' values. Otherwise, saves only the 'init' values.
+
+        Args:
+            output_path: Path to save the JSON file.
+            reference_json_path: Optional path to a reference JSON file (e.g., modelcard.json)
+                                 to preserve min/max metadata. If None, only init values are saved.
+
+        Returns:
+            str: The absolute path to the saved JSON file.
+        """
+        if not self._loaded_init_param_keys:
+            raise ValueError(
+                "No loaded init parameters found. "
+                "Call load_init_params_from_json() before saving."
+            )
+
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        loaded_keys = self._loaded_init_param_keys
+
+        # Prepare output dictionary
+        if reference_json_path:
+            ref_path = Path(reference_json_path)
+            if not ref_path.exists():
+                raise FileNotFoundError(
+                    f"Reference JSON not found: {reference_json_path}"
+                )
+
+            with ref_path.open("r", encoding="utf-8") as f:
+                param_cfg = json.load(f)
+
+            # Update init values while preserving min/max
+            for name in param_cfg.keys():
+                if (
+                    name in loaded_keys
+                    and name in self._modelcard
+                    and isinstance(param_cfg[name], dict)
+                ):
+                    param_cfg[name]["init"] = self._modelcard[name]
+            param_cfg = {k: v for k, v in param_cfg.items() if k in loaded_keys}
+        else:
+            # Save only init values
+            param_cfg = {
+                name: {"init": self._modelcard[name]} for name in sorted(loaded_keys)
+            }
+
+        with output_file.open("w", encoding="utf-8") as f:
+            json.dump(param_cfg, f, indent=4)
+
+        print(f"Saved {len(param_cfg)} parameter(s) to: {output_file}")
+        return str(output_file.resolve())
 
     def _resolve_ids_function(self):
         """Resolve Ids function name for different VA model implementations."""
@@ -95,7 +195,7 @@ class EEHEMTModelHelper:
         vds_array = np.full_like(vgs_array, vds_voltage, dtype=float)
         sweep_bias = {"br_gisi": vgs_array, "br_disi": vds_array}
 
-        sim_params: dict[str, float] = self.get_modelcard()
+        sim_params: dict[str, float] = self._get_modelcard()
         if modelcard_updates:
             sim_params.update({k: float(v) for k, v in modelcard_updates.items()})
 
