@@ -287,6 +287,33 @@ class EEHEMTModelHelper:
         print(f"Saved plot to: {save_path}")
         return str(save_path)
 
+    def save_iv_data_csv(
+        self,
+        vgs: np.ndarray,
+        i_sim: np.ndarray,
+        save_name: str,
+    ) -> str:
+        """Save I-V data (Vgs, Ids) to a CSV file under save_dir."""
+        vgs_array = np.asarray(vgs, dtype=float)
+        i_sim_array = np.asarray(i_sim, dtype=float)
+
+        if len(vgs_array) != len(i_sim_array):
+            raise ValueError("vgs and i_sim must have the same length")
+
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = self.save_dir / save_name
+
+        np.savetxt(
+            save_path,
+            np.column_stack((vgs_array, i_sim_array)),
+            delimiter=",",
+            header="Vgs,Ids",
+            comments="",
+        )
+
+        print(f"Saved I-V data to: {save_path}")
+        return str(save_path)
+
     def simulate_and_plot_from_json_init(
         self,
         json_path: str,
