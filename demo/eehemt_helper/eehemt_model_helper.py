@@ -183,7 +183,7 @@ class EEHEMTModelHelper:
         available = ", ".join(sorted(self.eehemt_model.functions.keys()))
         raise KeyError(f"No Ids-like function found. Available functions: {available}")
 
-    def _simulate_ids(
+    def simulate_ids(
         self,
         vgs: np.ndarray,
         vds_voltage: float = 0.5,
@@ -214,27 +214,6 @@ class EEHEMTModelHelper:
         )
 
         return np.asarray(i_sim, dtype=float)
-
-    def simulate_ids_from_json_init(
-        self,
-        json_path: str,
-        vgs: np.ndarray,
-        vds_voltage: float = 0.5,
-        curve_condition_value: float | None = None,
-        modelcard_updates: dict[str, float] | None = None,
-    ) -> np.ndarray:
-        """Simulate Ids by applying init values from JSON, then optional overrides."""
-        init_updates = self.load_init_params_from_json(json_path)
-        merged_updates = init_updates.copy()
-        if modelcard_updates:
-            merged_updates.update({k: float(v) for k, v in modelcard_updates.items()})
-
-        return self._simulate_ids(
-            vgs=vgs,
-            vds_voltage=vds_voltage,
-            curve_condition_value=curve_condition_value,
-            modelcard_updates=merged_updates,
-        )
 
     def plot_iv_curve(
         self,
