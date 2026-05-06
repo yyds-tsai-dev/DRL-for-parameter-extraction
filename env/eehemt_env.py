@@ -9,6 +9,7 @@ import pandas as pd
 import verilogae  # type: ignore[import-untyped]
 from dotenv import load_dotenv
 from gymnasium.spaces import Box
+from scipy.optimize import fsolve
 
 from utils.dim_reduce import get_err_features
 from utils.metrics import calculate_nrmse
@@ -234,9 +235,10 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.Rs_ext = float(os.getenv("RS_EXT", 0.0))
         self.Rd_ext = float(os.getenv("RD_EXT", 0.0))
         self.ir_drop_n_iter = int(os.getenv("IR_DROP_N_ITER", 2))
+        self.ir_drop_maxfev = int(os.getenv("IR_DROP_MAXFEV", 40))
         print(
             f"==== IR Drop: Rs_ext={self.Rs_ext} Ω, Rd_ext={self.Rd_ext} Ω, "
-            f"n_iter={self.ir_drop_n_iter} ===="
+            f"n_iter={self.ir_drop_n_iter}, maxfev={self.ir_drop_maxfev} ===="
         )
 
         # === Stagnation (停滯) detection settings ===
@@ -343,22 +345,24 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # does NOT automatically apply Rs/Rd drops, so we must include them here.
         Rs_total = float(self.current_params["Rs"]) + self.Rs_ext
         Rd_total = float(self.current_params["Rd"]) + self.Rd_ext
+        i_total_eval = self.eehemt_model.functions["I_total"].eval
+        vgs = np.asarray(self.vgs, dtype=np.float64)
+
         for vd_app in self.vds:
             # CURVE_CONDITION_NAMES[0] = "Vds" is a local analog variable in the VA file,
             # not a modelcard parameter, so it is not in sim_params and this line has no effect.
             # sim_params[CURVE_CONDITION_NAMES[0]] = vd_app
 
-            # Vectorized fixed-point iteration for IR Drop correction.
-            # R_tot = modelcard Rs/Rd (external-to-intrinsic) + circuit Rs_ext/Rd_ext
-            I_est = np.zeros(self.n_vgs, dtype=np.float64)
+            # Warm start: fixed-point iteration to get a good initial guess
+            i_est = np.zeros(self.n_vgs, dtype=np.float64)
             for _ in range(self.ir_drop_n_iter):
-                vs_node = I_est * Rs_total  # shape: (n_vgs,)
-                vd_node = vd_app - I_est * Rd_total  # shape: (n_vgs,)
-                vgs_int = self.vgs - vs_node  # shape: (n_vgs,)
-                vds_int = vd_node - vs_node  # shape: (n_vgs,)
-                vgd_int = vgs_int - vds_int  # shape: (n_vgs,)
-                I_est = np.asarray(
-                    self.eehemt_model.functions["I_total"].eval(
+                vs_node = i_est * Rs_total
+                vd_node = vd_app - i_est * Rd_total
+                vgs_int = vgs - vs_node
+                vds_int = vd_node - vs_node
+                vgd_int = vgs_int - vds_int
+                i_est = np.asarray(
+                    i_total_eval(
                         temperature=TEMPERATURE,
                         voltages={
                             "br_gisi": vgs_int,
@@ -367,9 +371,41 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                         },
                         **sim_params,
                     ),
+                    dtype=np.float64,
                 ).ravel()
 
-            i_sim_single_curve = I_est
+            # Refine with fsolve using warm-started initial guess
+            def _ir_drop_residual(i_est_iter: np.ndarray) -> np.ndarray:
+                vs_node = i_est_iter * Rs_total
+                vd_node = vd_app - i_est_iter * Rd_total
+                vgs_int = vgs - vs_node
+                vds_int = vd_node - vs_node
+                vgd_int = vgs_int - vds_int
+                i_model = np.asarray(
+                    i_total_eval(
+                        temperature=TEMPERATURE,
+                        voltages={
+                            "br_gisi": vgs_int,
+                            "br_disi": vds_int,
+                            "br_gidi": vgd_int,
+                        },
+                        **sim_params,
+                    ),
+                    dtype=np.float64,
+                ).ravel()
+                return i_est_iter - i_model
+
+            i_sim_single_curve, _, ier, msg = fsolve(
+                func=_ir_drop_residual,
+                x0=i_est,
+                maxfev=self.ir_drop_maxfev,
+                full_output=True,
+            )
+            if ier != 1:
+                print(
+                    f"Warning: IR-drop solver non-converged at step={self.current_step}, "
+                    f"Vds={vd_app:.4g}, ier={ier}, message={msg.strip()}"
+                )
 
             if np.any(np.isnan(i_sim_single_curve)) or np.any(
                 np.isinf(i_sim_single_curve)
