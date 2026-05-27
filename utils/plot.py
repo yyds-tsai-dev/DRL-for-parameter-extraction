@@ -149,14 +149,14 @@ class PlotCurve(DefaultCallbacks):
         self.curve_condition_values = None  # Store lg values for plotting
         self.vds = None
         self.plot_cnt = 0
-        self.min_nrmse = 100.0
+        self.min_arcsinh_huber_loss = float("inf")
 
     def on_environment_created(
         self, *, env_runner, metrics_logger=None, env, env_context, **kwargs
     ):
         actual_env = env.envs[  # type: ignore
             0
-        ].unwrapped  # type(actual_env).__name__ = EEHEMTEnv_Norm_Lgs
+        ].unwrapped
 
         if self.plot_data is None:
             print("\nFetching static plot data from the environment...\n")
@@ -167,6 +167,8 @@ class PlotCurve(DefaultCallbacks):
                     self.curve_condition_values = actual_env.curve_condition_values
                 if hasattr(actual_env, "vds"):
                     self.vds = actual_env.vds
+                    if self.curve_condition_values is None:
+                        self.curve_condition_values = actual_env.vds
             else:
                 print("Warning: Environment does not have '_get_plot_data' method.")
                 self.plot_data = {}
@@ -225,21 +227,25 @@ class PlotCurve(DefaultCallbacks):
         last_info = episode.infos[-1]
         self.plot_cnt += 1
         if "i_sim_current_matrix" in last_info:
-            nrmse = last_info["nrmse"]
-            if nrmse < self.min_nrmse:
-                self.min_nrmse = nrmse
+            fit_loss = last_info["arcsinh_huber_loss"]
+            if fit_loss < self.min_arcsinh_huber_loss:
+                self.min_arcsinh_huber_loss = fit_loss
 
             metrics_logger.log_value(
-                "last_nrmse",
-                nrmse,
+                "last_arcsinh_huber_loss",
+                fit_loss,
                 reduce="mean",
             )
             metrics_logger.log_value(
-                "min_nrmse",
-                self.min_nrmse,
+                "min_arcsinh_huber_loss",
+                self.min_arcsinh_huber_loss,
                 reduce="mean",
             )
-            print(f"\nFinal NRMSE: {nrmse:.4f}%\nMin NRMSE: {self.min_nrmse:.4f}%")
+            print(
+                "\nFinal arcsinh Huber loss: "
+                f"{fit_loss:.6g}\nMin arcsinh Huber loss: "
+                f"{self.min_arcsinh_huber_loss:.6g}"
+            )
 
             self.plot_data["i_sim_current_matrix"] = last_info["i_sim_current_matrix"]  # type: ignore
 

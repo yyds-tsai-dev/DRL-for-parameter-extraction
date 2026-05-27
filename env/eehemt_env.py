@@ -3,16 +3,17 @@ import os
 
 import gymnasium as gym
 import numpy as np
-import pandas as pd
 
-# Only available on Linux with python 3.11
-import verilogae  # type: ignore[import-untyped]
 from dotenv import load_dotenv
 from gymnasium.spaces import Box
-from scipy.optimize import fsolve
 
+from env.parameter_flow import (
+    ArcsinhHuberMetric,
+    EEHEMTSimulator,
+    MeasuredCurveDataset,
+    ParameterSpecCollection,
+)
 from utils.dim_reduce import get_err_features
-from utils.metrics import calculate_nrmse
 
 load_dotenv()
 
@@ -37,7 +38,11 @@ for name in key_params_names:
         print(
             f"Warning: Parameter '{name}' from environment variable not found in master config. Skipping."
         )
-n_key_params = len(key_params_config)
+PARAMETER_SPECS = ParameterSpecCollection.from_config(
+    ALL_POSSIBLE_KEY_PARAMS, key_params_names
+)
+key_params_names = PARAMETER_SPECS.names
+n_key_params = len(PARAMETER_SPECS)
 
 CURVE_CONDITION_NAMES = os.getenv("CURVE_CONDITION_NAMES", "UGW,NOF").split(",")
 TEMPERATURE = int(os.getenv("TEMPERATURE", 300))
@@ -66,95 +71,64 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         """
         super(EEHEMTEnv_Measure_VDS, self).__init__()
 
-        self.eehemt_model = verilogae.load(config.get("va_file_path", ""))  # type: ignore
-
         # === Vds & Vgs & Changeable Params ===
+        self.va_file_path = config.get("va_file_path", "")
         self.csv_file_path = config.get("csv_file_path", "")
         if not os.path.exists(self.csv_file_path):
             raise FileNotFoundError(
                 f"Measured data file not found:: {self.csv_file_path}"
             )
-        measured_df = pd.read_csv(self.csv_file_path)
-        self.vgs = measured_df["vg"].values
+        self.dataset = MeasuredCurveDataset.from_csv(self.csv_file_path)
+        self.vgs = self.dataset.vgs
         self.n_vgs = len(self.vgs)
         print(f"==== Using Vgs values: {self.vgs} ====")
-        self.vds = [float(col) for col in measured_df.columns if col != "vg"][1:11] + [
-            1.5,
-            2.0,
-            2.5,
-            3.0,
-            3.5,
-            4.0,
-            4.5,
-        ]
-        # self.vds =  [
-        #     1.0,
-        #     1.5,
-        #     2.0,
-        #     2.5,
-        #     3.0,
-        #     3.5,
-        #     4.0,
-        #     4.5,
-        # ]
+        self.vds = self.dataset.vds
         self.n_vds = len(self.vds)
-        # print(
-        #     f"==== Using Vds values: {', '.join(map(str, self.vds))} ===="
-        # )
         print(
             f"==== Using {', '.join(CURVE_CONDITION_NAMES)} different values: {', '.join(map(str, self.vds))} ===="
         )
 
-        # === Init & Target Params (Including key) Initialization ===
+        # === External Resistance for IR Drop Correction ===
+        # Internal Rs/Rd are modelcard params handled by the EEHEMT model itself.
+        # Rs_ext/Rd_ext are purely external circuit resistances the model doesn't know about.
+        self.Rs_ext = float(os.getenv("RS_EXT", 0.0))
+        self.Rd_ext = float(os.getenv("RD_EXT", 0.0))
+        self.ir_drop_n_iter = int(os.getenv("IR_DROP_N_ITER", 2))
+        self.ir_drop_maxfev = int(os.getenv("IR_DROP_MAXFEV", 40))
+        print(
+            f"==== IR Drop: Rs_ext={self.Rs_ext} Ω, Rd_ext={self.Rd_ext} Ω, "
+            f"n_iter={self.ir_drop_n_iter}, maxfev={self.ir_drop_maxfev} ===="
+        )
+        self.simulator = EEHEMTSimulator.from_va_file(
+            self.va_file_path,
+            temperature=TEMPERATURE,
+            rs_ext=self.Rs_ext,
+            rd_ext=self.Rd_ext,
+            ir_drop_n_iter=self.ir_drop_n_iter,
+            ir_drop_maxfev=self.ir_drop_maxfev,
+        )
+
+        # === Init Params (Including derived control params) ===
         self.random_init = config.get("random_init", False)
         print(
             f"\n==== Random initialization of parameters is {'enabled' if self.random_init else 'disabled'} ====\n"
         )
-        self.init_params = {
-            name: float(param.default)
-            for name, param in self.eehemt_model.modelcard.items()
-        }
-        if key_params_config.get("DVcoVgo"):
-            self.init_params["DVcoVgo"] = key_params_config["DVcoVgo"][
-                "min"
-            ]  # Initial DVcoVgo = 0.001V
-        if key_params_config.get("DVgoVto"):
-            self.init_params["DVgoVto"] = key_params_config["DVgoVto"][
-                "min"
-            ]  # Initial DVgoVto = 0.01V
-        if key_params_config.get("DVtsoVto"):
-            self.init_params["DVtsoVto"] = key_params_config["DVtsoVto"][
-                "min"
-            ]  # Initial DVtsoVto = 0.01V
-
+        self.init_params = PARAMETER_SPECS.normalize_params(
+            self.simulator.modelcard_defaults()
+        )
         self.current_params = self.init_params.copy()
-        self.KEY_PARAMS_MIN = np.array(
-            [config["min"] for config in key_params_config.values()],
-            dtype=np.float32,
-        )
-        self.KEY_PARAMS_MAX = np.array(
-            [config["max"] for config in key_params_config.values()],
-            dtype=np.float32,
-        )
+        self.KEY_PARAMS_MIN = PARAMETER_SPECS.min_values
+        self.KEY_PARAMS_MAX = PARAMETER_SPECS.max_values
 
         # === Load I_meas (y_true) and sweep bias ===
-        self.i_meas_dict = {}
-        for vd in self.vds:
-            filtered_data = measured_df[str(vd)].values
-            if len(filtered_data) == self.n_vgs:
-                self.i_meas_dict[vd] = filtered_data
-        self.all_i_meas_matrix = np.array([self.i_meas_dict[vd] for vd in self.vds])
-        self.all_i_meas_asinh_matrix = np.arcsinh(self.all_i_meas_matrix)
-        self.add_log_err = config.get("add_log_err", False)
-        print(
-            f"\n==== Log error in observation is {'enabled' if self.add_log_err else 'disabled'} ====\n"
-        )
-        if self.add_log_err:
-            self.all_i_meas_log_matrix = np.log10(self.all_i_meas_matrix + EPSILON)
+        self.i_meas_dict = self.dataset.current_by_vds
+        self.all_i_meas_matrix = self.dataset.current_matrix
 
         # === Action Space Definition ===
         self.action_space = Box(
-            low=-1.0, high=1.0, shape=(n_key_params,), dtype=np.float32
+            low=np.full(n_key_params, -1.0, dtype=np.float32),
+            high=np.full(n_key_params, 1.0, dtype=np.float32),
+            dtype=np.float32,
         )
         # self.action_space = Box(
         #     low=0.0, high=1.0, shape=(n_key_params,), dtype=np.float32
@@ -163,13 +137,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         #     [config["factor"] for config in key_params_config.values()],
         #     dtype=np.float32,
         # )  # Linear transform better than independent function transform
-        self.ACTION_FACTORS = np.array(
-            [
-                (config["max"] - config["min"]) * 0.01
-                for config in key_params_config.values()
-            ],
-            dtype=np.float32,
-        )
+        self.ACTION_FACTORS = PARAMETER_SPECS.action_factors(range_fraction=0.01)
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
         # === Observation Space Definition ===
@@ -178,20 +146,19 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         print(
             f"\n==== Reduce observation error dimension is {'enabled' if self.reduce_obs_err_dim else 'disabled'} ====\n"
         )
-        param_low = [config["min"] for config in key_params_config.values()]
-        param_high = [config["max"] for config in key_params_config.values()]
+        param_low = self.KEY_PARAMS_MIN
+        param_high = self.KEY_PARAMS_MAX
 
         prev_params_delta_low = -self.ACTION_FACTORS
         prev_params_delta_high = self.ACTION_FACTORS
+        self.OBS_ERR_BOUND = float(os.getenv("OBS_ERR_BOUND", 1e6))
 
         if self.reduce_obs_err_dim:
             total_err_len = int(os.getenv("N_FEATURES_PER_CURVE", 6)) * self.n_vds
-        elif self.add_log_err:
-            total_err_len = self.n_vgs * self.n_vds * 2  # 2 for linear & log error
         else:
             total_err_len = self.n_vgs * self.n_vds
-        err_vector_low = np.full(total_err_len, -np.inf)
-        err_vector_high = np.full(total_err_len, np.inf)
+        err_vector_low = np.full(total_err_len, -self.OBS_ERR_BOUND, dtype=np.float32)
+        err_vector_high = np.full(total_err_len, self.OBS_ERR_BOUND, dtype=np.float32)
 
         low_bounds = np.concatenate(
             [param_low, prev_params_delta_low, err_vector_low]
@@ -210,11 +177,14 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # === Episode Control ===
         self.MAX_EPISODE_STEPS = int(os.getenv("MAX_EPISODE_STEPS", 1000))
         self.REWARD_NORM_THRESHOLD = float(os.getenv("REWARD_NORM_THRESHOLD", 100.0))
-        self.NRMSE_THRESHOLD = float(os.getenv("NRMSE_THRESHOLD", 80.0))
+        self.ARCSINH_HUBER_THRESHOLD = float(
+            os.getenv("ARCSINH_HUBER_THRESHOLD", 1e-5)
+        )
+        self.REWARD_MIN = float(os.getenv("REWARD_MIN", -5.0))
+        self.REWARD_MAX = float(os.getenv("REWARD_MAX", 5.0))
         self.current_step = 0
 
         # === Reward & Error Initialization ===
-        # self.prev_nrmse = -1.0  # For reward calculation
         self.reward_norm = config.get("reward_norm", False)
         print(
             f"\n==== Reward normalization is {'enabled' if self.reward_norm else 'disabled'} ====\n"
@@ -228,17 +198,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 os.getenv("REWARD_ALPHA", 0.01)
             )  # Running average decay factor
         self.huber_delta = float(os.getenv("HUBER_DELTA", 1.0))  # Huber loss delta
-
-        # === External Resistance for IR Drop Correction ===
-        # Internal Rs/Rd are modelcard params handled by the EEHEMT model itself.
-        # Rs_ext/Rd_ext are purely external circuit resistances the model doesn't know about.
-        self.Rs_ext = float(os.getenv("RS_EXT", 0.0))
-        self.Rd_ext = float(os.getenv("RD_EXT", 0.0))
-        self.ir_drop_n_iter = int(os.getenv("IR_DROP_N_ITER", 2))
-        self.ir_drop_maxfev = int(os.getenv("IR_DROP_MAXFEV", 40))
-        print(
-            f"==== IR Drop: Rs_ext={self.Rs_ext} Ω, Rd_ext={self.Rd_ext} Ω, "
-            f"n_iter={self.ir_drop_n_iter}, maxfev={self.ir_drop_maxfev} ===="
+        self.metric = ArcsinhHuberMetric(
+            delta=self.huber_delta,
+            epsilon=EPSILON,
         )
 
         # === Stagnation (停滯) detection settings ===
@@ -297,20 +259,30 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         #     print("Warning: NaN or Inf detected in obs, cleaning it.")
         #     obs = np.nan_to_num(obs, nan=0.0, posinf=1e5, neginf=-1e5)
 
-        return obs
+        obs = np.nan_to_num(
+            obs,
+            nan=0.0,
+            posinf=self.OBS_ERR_BOUND,
+            neginf=-self.OBS_ERR_BOUND,
+        ).astype(np.float32)
+        return np.clip(
+            obs,
+            self.observation_space.low,
+            self.observation_space.high,
+        ).astype(np.float32)
 
-    def _get_info(self, nrmse: float) -> dict:
+    def _get_info(self, arcsinh_huber_loss: float) -> dict:
         """
         Generates the info dictionary returned at each step.
 
         Args:
-            nrmse (float): The current NRSME value.
+            arcsinh_huber_loss (float): The current fit loss.
         """
         current_key_params = {
             name: self.current_params[name] for name in key_params_names
         }
         return {
-            "nrmse": nrmse,
+            "arcsinh_huber_loss": arcsinh_huber_loss,
             "current_key_params": current_key_params,
         }
 
@@ -322,121 +294,27 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Helper function to run simulations for all finger and width conditions.
+        Helper function to run simulations for all Vds conditions.
 
         Returns:
             tuple[np.ndarray, np.ndarray, np.ndarray]:
                 - A flattened numpy array containing all concatenated error vectors.
-                - A numpy array of NRMSE values for each (Ugw, NOF) condition.
+                - A numpy array of arcsinh Huber losses for each Vds condition.
         """
-        i_sim_results = []
-        sim_params = {k: float(v) for k, v in self.current_params.items()}
-        if sim_params.get("DVcoVgo"):
-            sim_params.pop("DVcoVgo", None)
-        if sim_params.get("DVgoVto"):
-            sim_params.pop("DVgoVto", None)
-        if sim_params.get("DVtsoVto"):
-            sim_params.pop("DVtsoVto", None)
-        # print(
-        #     f"Step: {self.current_step}, Simulating with params: { {k: v for k, v in sim_params.items() if k in key_params_names} }"
-        # )
-        # Rs/Rd in va file only contribute I(d,di) and I(s,si) branch currents.
-        # When calling eval() with intrinsic voltages (br_gisi/br_disi), the model
-        # does NOT automatically apply Rs/Rd drops, so we must include them here.
-        Rs_total = float(self.current_params["Rs"]) + self.Rs_ext
-        Rd_total = float(self.current_params["Rd"]) + self.Rd_ext
-        i_total_eval = self.eehemt_model.functions["I_total"].eval
-        vgs = np.asarray(self.vgs, dtype=np.float64)
-
-        for vd_app in self.vds:
-            # CURVE_CONDITION_NAMES[0] = "Vds" is a local analog variable in the VA file,
-            # not a modelcard parameter, so it is not in sim_params and this line has no effect.
-            # sim_params[CURVE_CONDITION_NAMES[0]] = vd_app
-
-            # Warm start: fixed-point iteration to get a good initial guess
-            i_est = np.zeros(self.n_vgs, dtype=np.float64)
-            for _ in range(self.ir_drop_n_iter):
-                vs_node = i_est * Rs_total
-                vd_node = vd_app - i_est * Rd_total
-                vgs_int = vgs - vs_node
-                vds_int = vd_node - vs_node
-                vgd_int = vgs_int - vds_int
-                i_est = np.asarray(
-                    i_total_eval(
-                        temperature=TEMPERATURE,
-                        voltages={
-                            "br_gisi": vgs_int,
-                            "br_disi": vds_int,
-                            "br_gidi": vgd_int,
-                        },
-                        **sim_params,
-                    ),
-                    dtype=np.float64,
-                ).ravel()
-
-            # Refine with fsolve using warm-started initial guess
-            def _ir_drop_residual(i_est_iter: np.ndarray) -> np.ndarray:
-                vs_node = i_est_iter * Rs_total
-                vd_node = vd_app - i_est_iter * Rd_total
-                vgs_int = vgs - vs_node
-                vds_int = vd_node - vs_node
-                vgd_int = vgs_int - vds_int
-                i_model = np.asarray(
-                    i_total_eval(
-                        temperature=TEMPERATURE,
-                        voltages={
-                            "br_gisi": vgs_int,
-                            "br_disi": vds_int,
-                            "br_gidi": vgd_int,
-                        },
-                        **sim_params,
-                    ),
-                    dtype=np.float64,
-                ).ravel()
-                return i_est_iter - i_model
-
-            i_sim_single_curve, _, ier, msg = fsolve(
-                func=_ir_drop_residual,
-                x0=i_est,
-                maxfev=self.ir_drop_maxfev,
-                full_output=True,
-            )
-            if ier != 1:
-                print(
-                    f"Warning: IR-drop solver non-converged at step={self.current_step}, "
-                    f"Vds={vd_app:.4g}, ier={ier}, message={msg.strip()}"
-                )
-
-            if np.any(np.isnan(i_sim_single_curve)) or np.any(
-                np.isinf(i_sim_single_curve)
-            ):
-                i_sim_single_curve = np.nan_to_num(
-                    i_sim_single_curve, nan=0.0, posinf=0.1, neginf=-0.1
-                )
-
-            i_sim_results.append(i_sim_single_curve)
-
-        all_i_sim_matrix = np.array(i_sim_results)
+        self.current_params = PARAMETER_SPECS.normalize_params(self.current_params)
+        all_i_sim_matrix = self.simulator.simulate_current_matrix(
+            params=self.current_params,
+            vgs=self.vgs,
+            vds_values=self.vds,
+            current_step=self.current_step,
+        )
         linear_err = self.all_i_meas_matrix - all_i_sim_matrix
-        if self.add_log_err:
-            log_err = self.all_i_meas_log_matrix - np.log10(all_i_sim_matrix + EPSILON)
-            all_err_matrix = np.stack((linear_err, log_err), axis=-1)
-        else:
-            all_err_matrix = linear_err
-        concat_err_vector = all_err_matrix.flatten().astype(np.float32)
-
-        # Calculate NRMSE for each I-V curve (each row).
-        nrmse_vals = np.array(
-            [
-                calculate_nrmse(i_meas_row, i_sim_row)
-                for i_meas_row, i_sim_row in zip(
-                    self.all_i_meas_matrix, all_i_sim_matrix
-                )
-            ],
-            dtype=np.float32,
+        concat_err_vector = linear_err.flatten().astype(np.float32)
+        fit_loss_vals = self.metric.per_curve_loss(
+            self.all_i_meas_matrix, all_i_sim_matrix
         )
 
-        return all_i_sim_matrix, concat_err_vector, nrmse_vals
+        return all_i_sim_matrix, concat_err_vector, fit_loss_vals
 
     def _update_reward_running_stats(self, reward: float):
         """
@@ -505,26 +383,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         if self.random_init:
             for i, name in enumerate(key_params_names):
                 self.current_params[name] = float(
-                    np.random.uniform(self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i])
+                    self.np_random.uniform(self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i])
                 )
                 # print(f"DEBUG: {name} initialized to {self.current_params[name]}")
         else:
             self.current_params = self.init_params.copy()
-        # Vgo = Vco - DVcoVgo
-        if "Vco" in self.current_params and "DVcoVgo" in self.current_params:
-            self.current_params["Vgo"] = (
-                self.current_params["Vco"] - self.current_params["DVcoVgo"]
-            )
-        if "Vco" in self.current_params and "DVgoVto" in self.current_params:
-            self.current_params["Vto"] = (
-                self.current_params["Vco"]
-                - self.current_params["DVcoVgo"]
-                - self.current_params["DVgoVto"]
-            )
-        if "Vtso" in self.current_params and "DVtsoVto" in self.current_params:
-            self.current_params["Vto"] = (
-                self.current_params["Vtso"] - self.current_params["DVtsoVto"]
-            )
+        self.current_params = PARAMETER_SPECS.normalize_params(self.current_params)
 
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
@@ -532,15 +396,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # if self.use_stagnation:
         #     self.stagnation_cnt = 0
 
-        # === Run initial simulation for all (Ugw, NOF) conditions & Calculate RMSPE ===
-        _, init_err_vector, init_nrmse_vals = self._run_all_curve_condition_sim()
-        # avg_init_rmspe = np.mean(init_rmspe_vals)
-        ### New
-        avg_init_nrmse = np.mean(init_nrmse_vals)
-        # self.prev_nrmse = avg_init_nrmse
+        # === Run initial simulation for all Vds conditions & calculate fit loss ===
+        _, init_err_vector, init_loss_vals = self._run_all_curve_condition_sim()
+        avg_init_loss = float(np.mean(init_loss_vals))
 
         observation = self._get_obs(init_err_vector)
-        info = self._get_info(avg_init_nrmse)
+        info = self._get_info(avg_init_loss)
 
         return observation, info
 
@@ -562,80 +423,31 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         # === Update parameters and ensure they are within defined bounds ===
         key_params_delta = self._transform_action(action)
-        for i, name in enumerate(key_params_names):
-            self.current_params[name] += key_params_delta[i]
-            # self.current_params[name] = self.KEY_PARAMS_MIN[i] + action[i] * (self.KEY_PARAMS_MAX[i] - self.KEY_PARAMS_MIN[i])
-
-            self.current_params[name] = np.clip(
-                self.current_params[name],
-                self.KEY_PARAMS_MIN[i],
-                self.KEY_PARAMS_MAX[i],
-            )
-
-        # Vgo = Vco - DVcoVgo
-        if "Vco" in self.current_params and "DVcoVgo" in self.current_params:
-            self.current_params["Vgo"] = (
-                self.current_params["Vco"] - self.current_params["DVcoVgo"]
-            )
-        if "Vco" in self.current_params and "DVgoVto" in self.current_params:
-            self.current_params["Vto"] = (
-                self.current_params["Vco"]
-                - self.current_params["DVcoVgo"]
-                - self.current_params["DVgoVto"]
-            )
-        if "Vtso" in self.current_params and "DVtsoVto" in self.current_params:
-            self.current_params["Vto"] = (
-                self.current_params["Vtso"] - self.current_params["DVtsoVto"]
-            )
-        self.prev_params_delta = dict(zip(key_params_names, key_params_delta))
+        self.current_params, actual_delta = PARAMETER_SPECS.apply_delta(
+            self.current_params, key_params_delta
+        )
+        self.prev_params_delta = actual_delta
 
         # === Run simulations for all (Ugw, NOF) conditions ===
-        all_i_sim_matrix, current_err_vector, nrmse_vals = (
+        all_i_sim_matrix, current_err_vector, fit_loss_vals = (
             self._run_all_curve_condition_sim()
         )
 
-        # === Calculate NRMSE for reward, termination conditions, and info ===
-        current_nrmse = np.mean(nrmse_vals)
-        # raw_reward = self.prev_nrmse - current_nrmse
-        # raw_reward = np.clip(-np.log10((current_nrmse / 100.0) + EPSILON), -10.0, 10.0)
-
-        diff = np.arcsinh(all_i_sim_matrix) - self.all_i_meas_asinh_matrix
-        abs_diff = np.abs(diff)
-        loss_linear = np.where(
-            abs_diff <= self.huber_delta,
-            0.5 * diff**2,
-            self.huber_delta * (abs_diff - 0.5 * self.huber_delta),
+        # === Calculate arcsinh Huber loss for reward, termination, and info ===
+        current_loss = float(np.mean(fit_loss_vals))
+        raw_reward = self.metric.scaled_reward_from_loss(
+            current_loss,
+            reward_min=self.REWARD_MIN,
+            reward_max=self.REWARD_MAX,
         )
-        # Log domain Huber loss (subthreshold)
-        # log_sim = np.log10(np.abs(all_i_sim_matrix) + EPSILON)
-        # log_meas = np.log10(np.abs(self.all_i_meas_matrix) + EPSILON)
-        # diff_log = log_sim - log_meas
-        # abs_diff_log = np.abs(diff_log)
-        # loss_log = np.where(
-        #     abs_diff_log <= self.huber_delta,
-        #     0.5 * diff_log**2,
-        #     self.huber_delta * (abs_diff_log - 0.5 * self.huber_delta),
-        # )
-
-        # log_loss_weight = float(os.getenv("LOG_LOSS_WEIGHT", 2.0))
-        # combined_loss = np.mean(loss_linear) + log_loss_weight * np.mean(loss_log)
-
-        raw_reward = np.clip(
-            -np.log10(np.mean(loss_linear) + EPSILON) / 20.0,
-            float(os.getenv("REWARD_MIN", -2.0)),
-            float(os.getenv("REWARD_MAX", 2.0)),
-        )  # Scale down for stability
-
         reward = self._normalize_reward(float(raw_reward))
-
-        # self.prev_nrmse = current_nrmse
 
         # === Get the next observation and info ===
         observation = self._get_obs(current_err_vector)
-        info = self._get_info(current_nrmse)
+        info = self._get_info(current_loss)
 
         # === Check Termination Conditions ===
-        terminated_success = current_nrmse < self.NRMSE_THRESHOLD
+        terminated_success = current_loss < self.ARCSINH_HUBER_THRESHOLD
         # if self.use_stagnation:
         #     if abs(reward) < self.STAGNATION_THRESHOLD:
         #         self.stagnation_cnt += 1
@@ -652,7 +464,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         if terminated_success:
             print(
-                f"Success! NRMSE ({current_nrmse:.4f}) has reached the threshold ({self.NRMSE_THRESHOLD})."
+                "Success! Arcsinh Huber loss "
+                f"({current_loss:.6g}) has reached the threshold "
+                f"({self.ARCSINH_HUBER_THRESHOLD:.6g})."
             )
         # if self.use_stagnation and terminated_stagnation:
         #     print(

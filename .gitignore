@@ -1,6 +1,14 @@
 # 虛擬環境
 .venv/
 
+# Local runtime/cache state
+.codebase-memory/artifact.json
+.codebase-memory/graph.db.zst
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+demo/demo.tar.gz
+
 # VSCode 設定
 .vscode/
 

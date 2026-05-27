@@ -40,6 +40,8 @@ def get_err_features(
 
     final_features = np.array(all_features, dtype=np.float32)
     # for compressing dynamic range
-    final_features = np.sign(final_features) * np.log1p(np.abs(final_features))
+    final_features = (
+        np.sign(final_features) * np.log1p(np.abs(final_features))
+    ).astype(np.float32)
 
     return final_features

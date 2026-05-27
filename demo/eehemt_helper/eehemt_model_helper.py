@@ -293,6 +293,26 @@ class EEHEMTModelHelper:
         print(f"Saved I-V data to: {save_path}")
         return str(save_path)
 
+    def simulate_ids_from_json_init(
+        self,
+        json_path: str,
+        vgs: np.ndarray,
+        vds_voltage: float = 0.5,
+        curve_condition_value: float | None = None,
+        modelcard_updates: dict[str, float] | None = None,
+    ) -> np.ndarray:
+        """Load init params from JSON, apply optional updates, then simulate Ids."""
+        init_params = self.load_init_params_from_json(json_path)
+        sim_updates = init_params.copy()
+        if modelcard_updates:
+            sim_updates.update({k: float(v) for k, v in modelcard_updates.items()})
+        return self.simulate_ids(
+            vgs=vgs,
+            vds_voltage=vds_voltage,
+            curve_condition_value=curve_condition_value,
+            modelcard_updates=sim_updates,
+        )
+
     def simulate_and_plot_from_json_init(
         self,
         json_path: str,

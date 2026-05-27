@@ -1,11 +1,12 @@
 import argparse
 import os
 
+import ray
 import torch as th
 from dotenv import load_dotenv
 from ray import tune
 from ray.air.integrations.wandb import WandbLoggerCallback
-from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.algorithms.ppo import PPO, PPOConfig
 
 from env.eehemt_env import EEHEMTEnv_Measure_VDS
 
@@ -35,9 +36,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--random_init", action="store_true")
     parser.add_argument("--reduce_obs_err_dim", action="store_true")
-    parser.add_argument("--add_log_err", action="store_true")
     parser.add_argument("--reward_norm", action="store_true")
     parser.add_argument("--use_stagnation", action="store_true")
+    parser.add_argument(
+        "--observation_filter",
+        choices=["NoFilter", "MeanStdFilter"],
+        default=os.getenv("OBSERVATION_FILTER", "NoFilter"),
+        help="RLlib observation filter. NoFilter keeps the Gymnasium observation contract intact.",
+    )
 
     # === Env runner arguments ===
     parser.add_argument(
@@ -114,14 +120,13 @@ if __name__ == "__main__":
                 "csv_file_path": args.csv_file_path,
                 "random_init": args.random_init,
                 "reduce_obs_err_dim": args.reduce_obs_err_dim,
-                "add_log_err": args.add_log_err,
                 "reward_norm": args.reward_norm,
                 "use_stagnation": args.use_stagnation,
             },
         )
         .env_runners(
             num_env_runners=args.num_env_runners,
-            observation_filter="MeanStdFilter",  # Z-score norm better than L2 norm.
+            observation_filter=args.observation_filter,
         )
         .training(
             train_batch_size_per_learner=args.train_batch_size_per_learner,
@@ -164,12 +169,29 @@ if __name__ == "__main__":
     # )
 
     checkpoint_dir = os.path.join(current_dir, os.getenv("CHECKPOINT_DIR", ""))
+    ray.init(
+        ignore_reinit_error=True,
+        runtime_env={
+            "excludes": [
+                ".git/**",
+                ".venv/**",
+                ".mypy_cache/**",
+                ".pytest_cache/**",
+                ".ruff_cache/**",
+                ".codebase-memory/**",
+                "result/**",
+                "demo/demo.tar.gz",
+                "**/__pycache__/**",
+                "**/*.pyc",
+            ]
+        },
+    )
     if args.restore_path:
         print(f"\n==== Restoring training from: {args.restore_path} ====")
         
         tuner = tune.Tuner.restore(
             path=args.restore_path,
-            trainable="PPO",
+            trainable=PPO,
             resume_unfinished=True,
             resume_errored=True,
             param_space=config,
@@ -179,7 +201,7 @@ if __name__ == "__main__":
         stopping_criteria = {"training_iteration": args.n_iterations}
         ckpt_config = tune.CheckpointConfig(
             num_to_keep=5,
-            checkpoint_score_attribute="episode_reward_mean",
+            checkpoint_score_attribute="env_runners/episode_return_mean",
             checkpoint_score_order="max",
         )
         run_config = tune.RunConfig(
@@ -195,11 +217,23 @@ if __name__ == "__main__":
             ],
         )
         tuner = tune.Tuner(
-            "PPO",
+            PPO,
             param_space=config,
             run_config=run_config,
         )
     results = tuner.fit()
+    if not args.restore_path:
+        completed_iterations = [
+            result.metrics.get("training_iteration", 0)
+            for result in results
+            if result.metrics
+        ]
+        if not completed_iterations or max(completed_iterations) < args.n_iterations:
+            print(
+                "\n==== Training stopped before reaching the requested "
+                f"{args.n_iterations} iterations. ===="
+            )
+            raise SystemExit(130)
     print("\n==== Training completed. ====")
 
     # === Save model ===

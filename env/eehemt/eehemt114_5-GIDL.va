@@ -1,0 +1,556 @@
+//EEHEMT14 implementation in Verilog A by Samuel Mertens - Agilent
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+
+`define max_arg 60
+
+
+module eehemt114_va (g, d, s);
+
+	// %%DEVICE_CLASS=FET(NFET)%%
+
+    parameter real UGW_N = 1.0; // ineffective
+    parameter real NGF_N = 1.0; // ineffective
+	parameter real Temp_N = 25.0; // input Temp
+	parameter real on_off = 0; // noise on off
+
+	parameter real UGW = 75; // input UGW
+    parameter real NOF = 2; // input NOF
+
+    parameter real Rgtc=0;
+	parameter real Rdtc=0;
+	parameter real Rstc=0;
+	parameter real Rg=3.39538511209075; // scalable eq
+	parameter real Ris=0.1;
+	parameter real Rid=0.001;
+	parameter real Rs=3;
+	parameter real Rd=1.421857879586181;
+	parameter real Rdb=5e7;
+	parameter real Cbs=1e-15;
+	real Cdso=5E-14; // scalable eq
+	real Ugw=75;
+	real Ngf=2;
+	parameter real Tnom=25.0;
+	parameter real Vsat=1;
+	parameter real Vto=-0.67; // scalable eq
+	parameter real Vtso=-0.5;
+	parameter real Vtotc=0;
+	parameter real Vch=0.6;
+	parameter real Vdso=1.88;
+	parameter real Gamma=0.04;
+	parameter real Gammatc=0;
+	parameter real Vgo=-0.301;
+	parameter real Gmmax=0.13; // scalable eq
+	parameter real Gmmaxtc=0;
+	parameter real Kapa=0.04; // scalable eq
+	parameter real Vco=-0.3;
+	parameter real Mu=0.001;
+	parameter real Vbc=0.3;
+    parameter real Vba=8.6;
+	parameter real Deltgm=0.5;
+	parameter real Alpha=0.3663;
+	parameter real Peff=1.50877200009959; // scalable eq
+	parameter real Tau_lag=2.7531e-13;
+	real Vtoac=-1.0052;
+	parameter real Vtoactc=0;
+	parameter real Gammaac=0.041624;
+	parameter real Gammaactc=0;
+	parameter real Vgoac=-0.45025;
+	parameter real Vtsoac=-0.81774;
+	real Gmmaxac=0.12558; // scalable eq
+	parameter real Gmmaxactc=0;
+	parameter real Vcoac=-0.43052;
+	parameter real Deltgmac=0.23235;
+	parameter real Kapaac=0.056236;
+	parameter real Peffac=10;
+    parameter real Kdb=0;
+	parameter real Vdsm=0;
+	parameter real Gdbm=0;
+	parameter real Is=2.7852E-13;
+	parameter real Xti=3;
+    parameter real N=0.7136;
+	parameter real Is2=5e-14;
+	parameter real N2=0.037;
+    real Kbk=1E-5;//change
+	parameter real Vbr=1.2;//change
+	parameter real Idsoc=1.89;
+	parameter real Nbr=1.5;//change
+	parameter real rev1=0.03;
+	parameter real rev2=5e-9;
+	parameter real Xb1=0;
+	parameter real Deltds=0.1;
+	parameter real Deltgs=0.6348;
+	parameter real Vinfl=-0.6302;
+	parameter real Vinfltc=0;
+	parameter real C11o=151.491e-15;
+	parameter real C11th=60e-15;
+	real C12sat=4.45408E-14; // scalable eq
+	real Cgdsat=4.10886E-14; // scalable eq
+	parameter real Lambda=0.18551;
+	parameter real Nvg1=650e-9;
+	parameter real Nvg2=9.6;
+	parameter real Nvd1=75.5;
+	parameter real Nvd2=183.6;
+	parameter real UGW_nor=0;
+	real Lg=3.04569E-11;// scalable eq
+	real Ld=2.87586E-11;// scalable eq
+	real Ls=1.7617e-12;
+	real Cgp=2.86772E-14;// scalable eq
+	real Cdp=28.8409e-15;
+
+    // --- Custom GIDL Parameters ---
+    parameter real AGIDL = 1e-4;      // GIDL 前因子 (Fitting parameter)
+    parameter real BGIDL = 15;   // GIDL 指數因子 (與電場強度有關)
+    parameter real Vgd_min = 1e-3; // 防止分母為零的保護常數
+
+	parameter real Vg_mean=6.000000e-01;
+	parameter real Vg_std =0.353555;
+	parameter real Vd_mean=2.750000;
+	parameter real Vd_std =1.53;
+	parameter real Inverse_weight=0.357248;
+	parameter real Inverse_bias=0.707048;
+
+    inout d, g, s;
+    electrical d, g, s, di, gi, si, dii, sii, ds, dsi;
+
+	(*retrieve*)real Rg_MX, Vtso_MX, Vgo_MX, Gmmax_MX, Kapa_MX, Peff_MX;
+	real Rg_N,Temp_NK,Tnom_K,sfg,sf,Ris_N,Rid_N,Rs_N,Rd_N,Rdb_N;
+	real Cdso_N,Cbs_N,Vto_N,Gamma_N,Vtso_N,Gmmax_N,Deltgm_N,Peff_N;
+	real Vtoac_N,Gammaac_N,Vtsoac_N,Gmmaxac_N,Deltgmac_N,Peffac_N;
+	real Kdb_N,Gdbm_N,Kbk_N,Idsoc_N,C11o_N,C11th_N,C12sat_N,Vinfl_N;
+	real Bandwidth,BW;
+	real Vds2,Vgs2,Vds,Vgs,Vgs1,Vts,Vt,Vg,Vx,Idso1,arg,Idso,gmo1;
+	real I_ds,Vc,Vb,Va,Idsv_All,Idsvtemp,gmoff,a,b,svb,Pdiss;
+	real Vgs_ac,Vts_ac,Vt_ac,Vg_ac,Vx_ac,Idso_ac1,gmo_ac1,arg_ac,Idso_ac;
+	real Vcac,Vbac,Vaac,gmoff_ac,a_ac,b_ac,svb_ac,Idsv_All_ac;
+	(*retrieve*)real I_ds_ac,Pdiss_ac,Ids_ac,Idbp,Idb;
+	(*retrieve*)real Igs,Igd,Ids,I_total,Ig,Cgdsat_N;
+	(*retrieve*)real Is_N,Is_N2,Idsdelay,Idbdelay;
+	real f1,f2,Vj,Vo,Vgc,Vgy,gV,qg,qgc,qgy;
+	real chargeconst,boltzmannconst;
+	real tempsqrt,RSCALE,Xb;
+	real pi;
+	real Total;
+
+    // --- Custom GIDL Variables ---
+    (*retrieve*)real Vdg_int, I_GIDL;
+
+	analog function real  exp_soft;
+        input x;
+        real  x;
+        begin
+           if (x < `max_arg)
+               exp_soft = exp(x);
+            else
+               exp_soft = (x + 1 - `max_arg) * exp(`max_arg);
+        end
+    endfunction
+
+    analog begin
+	chargeconst = 1.602192e-019;
+	boltzmannconst= 1.380623e-023;
+	RSCALE=1e6;
+	Temp_NK=Temp_N+273.15;
+	Tnom_K=Tnom+273.15;
+	sf=UGW*NOF/(Ugw*Ngf);
+	sfg=Ugw*NOF/(UGW*Ngf);
+	Bandwidth=1.0;
+	BW=Bandwidth*on_off;
+	pi=3.14159265359;
+	Total=UGW*NOF;
+	//Rg=(79.5597 * pow(NOF, 0.0080177)) * pow(UGW, (0.13989 * pow(NOF, -1.419) + (-0.76958))) + (-0.76958 * pow(NOF, -1.8046));
+	Rg_MX = Rg;
+	Rg_N=Rg*(1+Rgtc*(Temp_NK-Tnom_K))/sfg;
+	Rd_N=Rd*(1+Rdtc*(Temp_NK-Tnom_K))/sf;
+	Rs_N=Rs*(1+Rstc*(Temp_NK-Tnom_K))/sf;
+	Ris_N=Ris/sf;
+	Rid_N=Rid/sf;
+    Rdb_N=Rdb/sf/RSCALE;
+	Lg = (0.30568 * pow(NOF, -4.3684)) * UGW * ((-17.6155) * pow(NOF, -2.0075) + 15.1987)
+     + (15.1987 * pow(NOF, 0.26228));
+	Ld = (35.4746 * pow(NOF, -3.1103)) * pow(UGW, (-10.1287 * pow(NOF, -5) + 0.74699)) + (0.74699 * pow(NOF, 1.6891));
+	Ls = (0.272 * pow(2.718281828459045, NOF * 0.344) + 11.5)
+     * pow(NOF, 0.004 * UGW)
+     * pow(2.718281828459045, -0.0284 * UGW);
+	Cdp= (-0.16448 * pow(NOF, -0.42348)) * UGW  * (-2.2907 * pow(NOF, 0.78727) + 1.1538) + (1.1538 * pow(NOF, 1.4217));
+	Cgp = (0.0089073 * pow(NOF, 1.224))  * UGW  * (7.8543 * pow(NOF, -1.4323) + 7.3823)  + (7.3823 * pow(NOF, 0.77304));
+	if (NOF<4) begin
+	Cdso = 1.0289*pow(UGW,0.7639)*1e-15;
+    end else begin
+		Cdso = 2.5413*pow(UGW,0.6394)*1e-15;
+    end
+    Cdso_N=Cdso*sf;
+	Cbs_N=Cbs*sf*RSCALE;
+	Gamma_N=Gamma*pow((Temp_NK/Tnom_K),Gammatc);
+	//Vtso=( 0.348 )*( (3.6561)+(-1.705)*ln((3.0515)*Temp_NK)+(3.3413)*pow(Temp_NK,0.17371));
+	Vtso_MX = Vtso;
+	Vtso_N=Vtso+Vtotc*(Temp_NK-Tnom_K);
+	//Gmmax=(0.1914*pow(UGW,-0.037))*33.5*pow(Temp_NK,-0.618);
+	Gmmax_MX = Gmmax;
+	Gmmax_N=(Gmmax+Gmmaxtc*(Temp_NK-Tnom_K))*sf;
+	Deltgm_N=Deltgm*sf;
+	//Peff=(214.696 * pow(NOF, -0.82019)) * pow(UGW, (0.82525 * pow(NOF, -3.2717) + (-0.75428))) + (-0.75428 * pow(NOF, -1.1226));
+	Peff_MX = Peff;
+	Peff_N=Peff*sf;
+	Vtoac=0.208*(123.19*pow(Temp_NK,-0.846));
+	Vtoac_N=Vtoac+Vtoactc*(Temp_NK-Tnom_K);
+	Gammaac_N=Gammaac*pow((Temp_NK/Tnom_K),Gammaactc);
+	Vtsoac_N=Vtsoac+Vtoactc*(Temp_NK-Tnom_K);
+	if (UGW<=25) begin
+            Gmmaxac = (0.13306 * pow(NOF, -0.071274))
+           * pow(UGW, (-0.2247 * pow(NOF, 0.090664) + 0.23732));
+    end else begin
+		Gmmaxac= (0.1494*exp(-0.009*NOF))*(-0.0014*Temp_NK+1.424);
+    end
+	Gmmaxac_N=(Gmmaxac+Gmmaxactc*(Temp_NK-Tnom_K))*sf;
+	Deltgmac_N=Deltgmac*sf;
+	Peffac_N=Peffac*sf;
+	Kdb_N=Kdb/sf;
+	Gdbm_N=Gdbm*sf;
+	//N=1.152*exp(0.0013*Temp_NK);
+	Is_N=Is*sf*exp_soft((Temp_NK/Tnom_K-1)*chargeconst*1.11/(boltzmannconst*N*(Temp_NK))+Xti/N*ln(Temp_NK/Tnom_K));
+	Is_N2=Is2*sf*exp_soft((Temp_NK/Tnom_K-1)*chargeconst*1.11/(boltzmannconst*N2*(Temp_NK))+Xti/N2*ln(Temp_NK/Tnom_K));
+	Kbk=( 2.4e-14 )*( (36318.2873)*exp((-502.6176)*pow(Temp_NK,-0.64074))+(1.0223) );
+	Kbk_N=Kbk*sf;
+	Idsoc_N=Idsoc*sf;
+	Vinfl_N=Vinfl+Vinfltc*(Temp_NK-Tnom_K);
+	C11o_N=C11o*sf;
+	C11th_N=C11th*sf;
+	C12sat = (97.1518 * pow(NOF, 0.056111)) * pow(UGW, (0.084676 * pow(NOF, -1.9415) + (-0.21145))) + (-0.21145 * pow(NOF, -2.2329));
+	C12sat_N=C12sat*sf;
+	Cgdsat = (101.9877 * pow(NOF, 0.026998)) * pow(UGW, (0.04592 * pow(NOF, -0.38364) + (-0.24949))) + (-0.24949 * pow(NOF, -1.2046));
+	Cgdsat_N=Cgdsat*sf;
+
+	Vto_N=Vto+Vtotc*(Temp_NK-Tnom_K);
+	Vds2=V(di,si);
+	Vgs2=V(gi,si);
+	//Vgo=0.625*(1.2558*exp(-8e-4*Temp_NK));
+	Vgo_MX = Vgo;
+	//Kapa=0.027*pow(Total,0.24);
+	Kapa_MX = Kapa;
+	//$debug("Vds2,Vgs2 = %e %e",Vds2,Vgs2);
+	if(Vds2>=0)
+	begin
+		Vds=Vds2;
+		Vgs1=Vgs2;
+	end else
+	begin
+		Vds=-Vds2;
+		Vgs1=Vgs2-Vds2;
+	end
+	Vts=(Vtso_N-Vch)/(1+Gamma_N*(Vdso-Vds))+Vch;
+	if(Vgs1<Vts && Vtso_N>Vto_N)
+	begin
+		Vgs=Vts;
+	end else
+	begin
+		Vgs=Vgs1;
+	end
+
+	Vt=(Vto_N-Vch)/(1+Gamma_N*(Vdso-Vds))+Vch;
+	Vg=(Vgo-Vch)/(1+Gamma_N*(Vdso-Vds))+Vch;
+	Vx=(Vgs-Vch)*(1+Gamma_N*(Vdso-Vds));
+
+	if (Vgs >= Vg)
+	begin
+		Idso1=Gmmax_N*(Vx-(Vgo+Vto_N)/2+Vch);
+		gmo1=Gmmax_N*(1+Gamma_N*(Vdso-Vds));
+	end	else
+	begin
+		if (Vgs <= Vt)
+		begin
+			Idso1=0.0;
+			gmo1=0.0;
+		end else
+		begin
+			Idso1=Gmmax_N/2*(((Vto_N-Vgo)/pi)*sin(pi*(Vx-(Vgo-Vch))/(Vto_N-Vgo))+Vx-(Vto_N-Vch));
+			gmo1=Gmmax_N/2*(1+Gamma_N*(Vdso-Vds))*(cos(pi*(Vx-(Vgo-Vch))/(Vto_N-Vgo))+1);
+		end
+	end
+	if (Idso1!=0 && Vgs1<Vts && Vtso_N>Vto_N)
+	begin
+		arg=-(gmo1/Idso1)*(Vts-Vgs1);//might be discontinuous if Idso1==0
+	end else
+	begin
+		arg=0.0;
+	end
+	Idso=Idso1*exp(arg);
+
+	Vc=Vco+Mu*(Vdso-Vds);
+	Vb=Vbc+Vc;
+	Va=Vb-Vba;
+	if (Vco >= Vgo)
+	begin
+		gmoff=Gmmax_N;
+	end else
+	begin
+		if (Vco <= Vto_N)
+		begin
+			gmoff=0.0;
+		end else
+		begin
+			gmoff=0.5*Gmmax_N*(cos(pi*(Vco-Vgo)/(Vto_N-Vgo))+1);
+		end
+	end
+	svb=Deltgm_N*Vbc/sqrt(Alpha*Alpha+Vbc*Vbc);
+	b=svb*Vba/(Deltgm_N*(sqrt(Alpha*Alpha+(Vb-Vc)*(Vb-Vc))-Alpha)-gmoff);
+	if (b > 100.0)  b = 100.0;
+	if (b < -100.0) b = -100.0;
+	a=(Deltgm_N*(sqrt(Alpha*Alpha+(Vb-Vc)*(Vb-Vc))-Alpha)-gmoff)/(pow(Vba,b));
+	//$debug("Vc,Vb,Va=%e %e %e",Vc,Vb,Va);
+	//$debug("a,b,svb=%e %e %e",a,b,svb);
+	if(Vgs > Vb)
+	begin
+		tempsqrt=sqrt(Alpha*Alpha+(Vb-Vc)*(Vb-Vc));
+		Idsvtemp=Deltgm_N*(0.5*((Vb-Vc)*tempsqrt+Alpha*Alpha*ln(((Vb-Vc)+tempsqrt)/Alpha))-Alpha*(Vb-Vc));
+		//Idsv_All=a/(b+1)*((pow((Vgs-Va),(b+1.0))-pow(Vba,(b+1.0))))+gmoff*(Vgs-Vb)+Idsvtemp;
+		// === Stable diff-of-powers (mathematically equivalent) ===
+        begin :stable_diffpow
+            real bp1_stab, A_stab, B_stab, r_stab, u_stab, z_stab;
+            real s_fac, expm1_z, term_stab;
+
+            bp1_stab = b + 1.0;     // p
+
+            // A = Vgs - Va, B = Vba（在 Vgs>Vb 分支下兩者本就 >0）
+            A_stab = Vgs - Va;
+            B_stab = Vba;
+
+            r_stab = A_stab / B_stab;      // r = A/B
+            u_stab = ln(r_stab);           // u = ln r
+            s_fac  = Deltgm_N*(sqrt(Alpha*Alpha + (Vb - Vc)*(Vb - Vc)) - Alpha) - gmoff;
+
+            if (abs(bp1_stab) < 1e-8) begin
+                // p -> 0 極限：s * ln(r)
+                term_stab = s_fac * u_stab;
+            end else begin
+                // 一般情況： (s*B/p) * (exp(p*u) - 1) ，用 expm1 穩定化
+                z_stab = bp1_stab * u_stab;
+
+                // 小量時用二階近似，避免相消（沒有 expm1 可用）
+                if (abs(z_stab) < 1e-6)
+                    expm1_z = z_stab * (1.0 + 0.5 * z_stab);
+                else
+                    expm1_z = exp(z_stab) - 1.0;
+
+                // 注意：是 (s * B) / p ！不是 B^p
+                term_stab = (s_fac * B_stab / bp1_stab) * expm1_z;
+            end
+
+            Idsv_All = term_stab + gmoff*(Vgs - Vb) + Idsvtemp;
+        end
+		//$debug("1 Idsv_All = %e %e %e",Idsv_All,(Vgs-Va),Vba);
+	end else
+	begin
+		if(Vgs <= Vc)
+		begin
+			Idsv_All=0.0;
+			//$debug("3 Idsv_All");
+		end
+		else begin
+			//Idsv_All=Deltgm_N*(0.5*((Vgs-Vc)*sqrt(Alpha*Alpha+(Vgs-Vc)*(Vgs-Vc))+Alpha*Alpha*ln(((Vgs-Vc)+sqrt(Alpha*Alpha+(Vgs-Vc)*(Vgs-Vc)))/Alpha))-Alpha*(Vgs-Vc));
+			tempsqrt=sqrt(Alpha*Alpha+(Vgs-Vc)*(Vgs-Vc));
+			Idsv_All=Deltgm_N*(0.5*((Vgs-Vc)*tempsqrt+Alpha*Alpha*ln(((Vgs-Vc)+tempsqrt)/Alpha))-Alpha*(Vgs-Vc));
+			//$debug("2 Idsv_All = %e %e %e %e\n",Idsv_All,(Vgs-Vc),tempsqrt,Deltgm_N);
+		end
+	end
+	I_ds=(Idso-Idsv_All)*(1+Kapa*Vds)*tanh(3*Vds/Vsat);
+	if(I_ds<0)
+	begin
+		I_ds=0;
+		//$write("I_ds<0 for Vds=%e and Vgs=%e\n",V(d,s),V(g,s));
+	end;
+	//$debug("Idso,Idsv_All = %e %e",Idso,Idsv_All);
+	Pdiss=I_ds*Vds;
+	Ids=I_ds/(1+Pdiss/Peff_N);
+	//$debug("Ids,I_ds,Pdiss = %e %e %e",Ids,I_ds,Pdiss);
+	Vts_ac=(Vtsoac_N-Vch)/(1+Gammaac_N*(Vdso-Vds))+Vch;
+	if (Vgs1<Vts_ac && Vtsoac_N>Vtoac_N)
+	begin
+		Vgs_ac=Vts_ac;
+	end else
+	begin
+		Vgs_ac=Vgs1;
+	end
+	//$debug("Vgs_ac,Vds,Vts_ac= %e %e %e",Vgs_ac,Vds,Vts_ac);
+	Vt_ac=(Vtoac_N-Vch)/(1+Gammaac_N*(Vdso-Vds))+Vch;
+	Vg_ac=(Vgoac-Vch)/(1+Gammaac_N*(Vdso-Vds))+Vch;
+	Vx_ac=(Vgs_ac-Vch)*(1+Gammaac_N*(Vdso-Vds));
+
+	if (Vgs_ac >= Vg_ac)
+	begin
+		Idso_ac1= Gmmaxac_N*(Vx_ac-(Vgoac+Vtoac_N)/2+Vch);
+		gmo_ac1= Gmmaxac_N*(1+Gammaac_N*(Vdso-Vds));
+	end else
+	begin
+		if (Vgs_ac <= Vt_ac)
+		begin
+			Idso_ac1= 0.0;
+			gmo_ac1= 0.0;
+		end else
+		begin
+			Idso_ac1= Gmmaxac_N/2*(((Vtoac_N-Vgoac)/pi)*sin(pi*(Vx_ac-(Vgoac-Vch))/(Vtoac_N-Vgoac))+Vx_ac-(Vtoac_N-Vch));
+			gmo_ac1= Gmmaxac_N/2*(1+Gammaac_N*(Vdso-Vds))*(cos(pi*(Vx_ac-(Vgoac-Vch))/(Vtoac_N-Vgoac))+1);
+		end
+	end
+	if (Idso_ac1!=0 && Vgs1<Vts_ac && Vtsoac_N>Vtoac_N)
+	begin
+		arg_ac=-(gmo_ac1/Idso_ac1)*(Vts_ac-Vgs1);
+	end else
+	begin
+		arg_ac=0;
+	end
+	Idso_ac=Idso_ac1*exp(arg_ac);
+
+	Vcac=Vcoac+Mu*(Vdso-Vds);
+	Vbac=Vbc+Vcac;
+	Vaac=Vbac-Vba;
+	//$debug("Vcac,Vbac,Vaac=%e %e %e",Vcac,Vbac,Vaac);
+	if (Vcoac >= Vgoac)
+	begin
+		gmoff_ac= Gmmaxac_N;
+	end else
+	begin
+		if (Vcoac <= Vtoac_N)
+		begin
+			gmoff_ac= 0.0;
+		end else
+		begin
+			gmoff_ac= Gmmaxac_N/2*(cos(pi*(Vcoac-Vgoac)/(Vtoac_N-Vgoac))+1);
+		end
+	end
+	svb_ac=Deltgmac_N*Vbc/sqrt(Alpha*Alpha+Vbc*Vbc);
+	b_ac=svb_ac*Vba/(Deltgmac_N*(sqrt(Alpha*Alpha+(Vbac-Vcac)*(Vbac-Vcac))-Alpha)-gmoff_ac);
+	a_ac=(Deltgmac_N*(sqrt(Alpha*Alpha+(Vbac-Vcac)*(Vbac-Vcac))-Alpha)-gmoff_ac)/(pow(Vba,b_ac));
+	//$debug("a_ac,b_ac,svb_ac=%e %e %e",a_ac,b_ac,svb_ac);
+
+	if(Vgs_ac > Vbac)
+	begin
+		Idsvtemp=Deltgmac_N*(0.5*((Vbac-Vcac)*sqrt(Alpha*Alpha+(Vbac-Vcac)*(Vbac-Vcac))+Alpha*Alpha*ln(((Vbac-Vcac)+sqrt(Alpha*Alpha+(Vbac-Vcac)*(Vbac-Vcac)))/Alpha))-Alpha*(Vbac-Vcac));
+		Idsv_All_ac= a_ac/(b_ac+1)*(pow((Vgs_ac-Vaac),(b_ac+1))-pow(Vba,(b_ac+1)))+gmoff_ac*(Vgs_ac-Vbac)+Idsvtemp;
+		//$debug("1 Idsv_All_ac = %e",Idsv_All_ac);
+	end else
+	begin
+		if(Vgs_ac <= Vcac)
+		begin
+			Idsv_All_ac=0.0;
+		end else
+		begin
+			Idsv_All_ac= Deltgmac_N*(0.5*((Vgs_ac-Vcac)*sqrt(Alpha*Alpha+(Vgs_ac-Vcac)*(Vgs_ac-Vcac))+Alpha*Alpha*ln(((Vgs_ac-Vcac)+sqrt(Alpha*Alpha+(Vgs_ac-Vcac)*(Vgs_ac-Vcac)))/Alpha))-Alpha*(Vgs_ac-Vcac)) ;
+			//$debug("2 Idsv_All_ac = %e",Idsv_All_ac);
+		end
+	end
+	I_ds_ac=(Idso_ac-Idsv_All_ac)*(1+Kapaac*Vds)*tanh(3*Vds/Vsat);
+	if(I_ds_ac<0)
+	begin
+		I_ds_ac=0;
+		//$write("I_ds_ac<0 for Vds=%e and Vgs=%e\n",V(d,s),V(g,s));
+	end
+	//$debug("Ids0,Ids0_ac = %e %e",Idso,Idso_ac);
+	Pdiss_ac=I_ds_ac*Vds;
+	Ids_ac=I_ds_ac/(1+Pdiss_ac/Peffac_N);
+	//$debug("Ids,Ids_ac = %e %e",Ids,Ids_ac);
+
+    // --- Restored Original Idbp Logic ---
+    if (Vds>Vdsm && Kdb_N!= 0)
+	begin
+		Idbp= sqrt(Gdbm_N/Kdb_N)*atan((Vds-Vdsm)*sqrt(Kdb_N*Gdbm_N))+Gdbm_N*Vdsm;
+	end else
+	begin
+		if (Vds<-Vdsm && Kdb_N!= 0)begin
+			Idbp=sqrt(Gdbm_N/Kdb_N)*atan((Vds-Vdsm)*sqrt(Kdb_N*Gdbm_N))-Gdbm_N*Vdsm;
+		end else
+		begin
+			Idbp=Gdbm_N*Vds;
+		end
+	end
+	Idb=Ids_ac-Ids+Idbp;
+    // ------------------------------------
+
+    // --- Custom GIDL Calculation ---
+    Vdg_int = Vds-Vgs2 ;// Get internal Drain-to-Gate voltage
+
+    // GIDL Physics: Occurs when Vdg is highly positive (Drain high, Gate negative)
+    // Using exp_soft to prevent numerical overflow and ensure C1 continuity
+    if (Vdg_int > Vgd_min)
+    begin
+        I_GIDL = AGIDL * Vdg_int * exp_soft(-BGIDL / Vdg_int);
+    end else begin
+        I_GIDL = 0;
+    end
+    // -------------------------------
+
+	//$debug("Ids_ac,Ids = %e %e",Ids_ac,Ids);
+	Igs=Is_N*(exp_soft(chargeconst*V(gi,si)/(N*boltzmannconst*(Temp_NK)))-1)+Is_N2*(exp_soft(V(gi,si)/N2)-1)*V(di,si);
+	if (-V(gi,di)>Vbr)
+	begin
+		Igd=-Kbk_N*(1-Ids/Idsoc_N)*pow(-V(gi,di)-Vbr+rev1,Nbr)+rev2;
+	end else
+	begin
+		Igd=0;
+	end
+	Idsdelay=absdelay(Ids,Tau_lag);
+	Idbdelay=absdelay(Idb,Tau_lag);
+
+	Vgc=V(gi,sii);
+	Vgy=V(gi,dii);
+
+	f1=0.5*(1+tanh(3/Deltds*(Vgc-Vgy)));
+	f2=0.5*(1-tanh(3/Deltds*(Vgc-Vgy)));
+
+	Vj=0.5*(2*Vgc-(Vgc-Vgy)+sqrt((Vgc-Vgy)*(Vgc-Vgy)+Deltds*Deltds));
+	Vo=sqrt((Vgc-Vgy)*(Vgc-Vgy)+Deltds*Deltds);
+	gV=Vj-Vinfl_N+Deltgs/3*ln(cosh(3/Deltgs*(Vj-Vinfl_N)));
+	qg=((C11o_N-C11th_N)/2*gV+C11th_N*(Vj-Vinfl_N))*(1+Lambda*(Vo-Vdso))-C12sat_N*Vo;
+	qgy=(qg-Cgdsat_N*Vgc)*f2+Cgdsat_N*Vgy*f1;
+	qgc=(qg-Cgdsat_N*Vgy)*f1+Cgdsat_N*Vgc*f2;
+
+	Xb=(Nvg1*exp(V(gi,si)*Nvg2))*(Nvd1*V(di,si)+Nvd2)*(UGW*1e6*NOF)/2.0/75.0;
+	I_total = Ids + Igd + Idbp+I_GIDL;
+	Ig = Igs + Igd - I_GIDL;
+	if(Vds2>0)
+	begin
+		I(di,si) <+ Idsdelay;
+		I(ds) <+ Idbdelay;
+		I(di,si) <+ (V(ds)/Rdb_N+Idbdelay);
+	end else
+	begin
+		I(di,si) <+ -Idsdelay;
+		I(ds) <+ -Idbdelay;
+		I(di,si) <+ (V(ds)/Rdb_N-Idbdelay);
+	end
+
+	I(gi,si) <+ Igs;
+	I(gi,di) <+ Igd;
+
+    // --- Custom GIDL Routing ---
+    I(di, gi) <+ I_GIDL; // Route current accurately from Drain to Gate
+    // ---------------------------
+
+	I(g,gi) <+ V(g,gi)/Rg_N; //g==n8 gi=gg si=ss di=dd
+	I(di,dii) <+ V(di,dii)/Rid_N; //dii==n6
+	I(si,sii) <+ V(si,sii)/Ris_N; //sii==n5
+	I(d,di) <+ V(d,di)/Rd_N; //d==n1
+	I(s,si) <+ V(s,si)/Rs_N; //s==n0
+	I(ds) <+ V(ds)/Rdb_N; //ds==ds
+	I(di,dsi) <+ V(di,dsi)/Rdb_N/RSCALE; //ds==ds
+	I(dsi,si) <+ ddt(Cbs_N/RSCALE*V(dsi,si));
+	I(di,si) <+ ddt(Cdso_N*V(di,si));
+	I(ds) <+ ddt(Cbs_N*V(ds));
+	I(gi,sii) <+ ddt(qgc);
+	I(gi,dii) <+ ddt(qgy);
+
+	//NOISE
+	I(g,gi) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW/Rg_N);
+    I(di,dii) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW/Rid_N);
+	I(si,sii) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW/Ris_N);
+    I(d,di) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW/Rd_N);
+	I(s,si) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW/Rs_N);
+	I(di,dsi) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW/Rdb_N/RSCALE);
+	I(di,si) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW*Xb);
+    I(gi,di) <+ white_noise(4.0 * boltzmannconst * Temp_NK*BW*Xb1);
+
+	end
+
+endmodule
