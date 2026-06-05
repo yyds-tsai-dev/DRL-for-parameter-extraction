@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -170,6 +171,8 @@ class EEHEMTSimulator:
         self.rd_ext = rd_ext
         self.ir_drop_n_iter = ir_drop_n_iter
         self.ir_drop_maxfev = ir_drop_maxfev
+        self.ir_drop_residual_tol = float(os.getenv("IR_DROP_RESIDUAL_TOL", 1e-8))
+        self.last_solver_diagnostics: list[dict[str, object]] = []
 
     @classmethod
     def from_va_file(
@@ -206,6 +209,7 @@ class EEHEMTSimulator:
         current_step: int = 0,
     ) -> np.ndarray:
         i_sim_results = []
+        self.last_solver_diagnostics = []
         sim_params = {k: float(v) for k, v in params.items()}
         for synthetic_param in ("DVcoVgo", "DVgoVto", "DVtsoVto"):
             sim_params.pop(synthetic_param, None)
@@ -215,15 +219,18 @@ class EEHEMTSimulator:
         i_total_eval = self.eehemt_model.functions["I_total"].eval
         vgs_array = np.asarray(vgs, dtype=np.float64)
 
+        previous_solution: np.ndarray | None = None
+        zero_start = np.zeros(len(vgs_array), dtype=np.float64)
+
         for vd_app in vds_values:
-            i_est = np.zeros(len(vgs_array), dtype=np.float64)
+            warmup_start = zero_start.copy()
             for _ in range(self.ir_drop_n_iter):
-                i_est = self._evaluate_current(
+                warmup_start = self._evaluate_current(
                     i_total_eval=i_total_eval,
                     sim_params=sim_params,
                     vgs=vgs_array,
                     vd_app=float(vd_app),
-                    current_guess=i_est,
+                    current_guess=warmup_start,
                     rs_total=rs_total,
                     rd_total=rd_total,
                 )
@@ -240,16 +247,74 @@ class EEHEMTSimulator:
                 )
                 return i_est_iter - i_model
 
-            i_sim_single_curve, _, ier, msg = fsolve(
-                func=_ir_drop_residual,
-                x0=i_est,
-                maxfev=self.ir_drop_maxfev,
-                full_output=True,
-            )
-            if ier != 1:
+            candidates: list[tuple[str, np.ndarray]] = []
+            if previous_solution is not None:
+                candidates.append(("continuation", previous_solution.copy()))
+            candidates.append(("zero", zero_start.copy()))
+            if not any(
+                np.allclose(warmup_start, candidate, rtol=1e-12, atol=1e-15)
+                for _, candidate in candidates
+            ):
+                candidates.append(("warmup", warmup_start.copy()))
+
+            selected_solution: np.ndarray | None = None
+            selected_attempt: dict[str, object] | None = None
+            attempts: list[dict[str, object]] = []
+
+            for start_name, start_value in candidates:
+                solution, _, ier, msg = fsolve(
+                    func=_ir_drop_residual,
+                    x0=start_value,
+                    maxfev=self.ir_drop_maxfev,
+                    full_output=True,
+                )
+                solution = np.nan_to_num(
+                    solution, nan=0.0, posinf=0.1, neginf=-0.1
+                )
+                residual = _ir_drop_residual(solution)
+                residual_max_abs = float(np.max(np.abs(residual)))
+                accepted = ier == 1 or residual_max_abs <= self.ir_drop_residual_tol
+                attempt = {
+                    "start": start_name,
+                    "ier": int(ier),
+                    "message": str(msg).strip(),
+                    "residual_max_abs": residual_max_abs,
+                    "accepted": accepted,
+                }
+                attempts.append(attempt)
+                if selected_attempt is None or residual_max_abs < float(
+                    selected_attempt["residual_max_abs"]
+                ):
+                    selected_attempt = attempt
+                    selected_solution = solution
+                if accepted:
+                    selected_attempt = attempt
+                    selected_solution = solution
+                    break
+
+            if selected_solution is None or selected_attempt is None:
+                raise RuntimeError("IR-drop solver did not run any attempts")
+
+            i_sim_single_curve = selected_solution
+            converged = bool(selected_attempt["accepted"])
+            if converged:
+                previous_solution = i_sim_single_curve.copy()
+            diagnostic = {
+                "vds": float(vd_app),
+                "converged": converged,
+                "ier": int(selected_attempt["ier"]),
+                "message": str(selected_attempt["message"]),
+                "residual_max_abs": float(selected_attempt["residual_max_abs"]),
+                "selected_start": str(selected_attempt["start"]),
+                "attempts": attempts,
+            }
+            self.last_solver_diagnostics.append(diagnostic)
+            if not converged:
                 print(
                     f"Warning: IR-drop solver non-converged at step={current_step}, "
-                    f"Vds={vd_app:.4g}, ier={ier}, message={msg.strip()}"
+                    f"Vds={vd_app:.4g}, ier={selected_attempt['ier']}, "
+                    f"residual_max_abs={selected_attempt['residual_max_abs']:.3e}, "
+                    f"message={selected_attempt['message']}"
                 )
 
             i_sim_results.append(

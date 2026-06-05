@@ -13,6 +13,7 @@ from env.parameter_flow import (
     MeasuredCurveDataset,
     ParameterSpecCollection,
 )
+from evaluation.metrics import calculate_nrmse
 from utils.dim_reduce import get_err_features
 
 load_dotenv()
@@ -91,10 +92,14 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # === External Resistance for IR Drop Correction ===
         # Internal Rs/Rd are modelcard params handled by the EEHEMT model itself.
         # Rs_ext/Rd_ext are purely external circuit resistances the model doesn't know about.
-        self.Rs_ext = float(os.getenv("RS_EXT", 0.0))
-        self.Rd_ext = float(os.getenv("RD_EXT", 0.0))
-        self.ir_drop_n_iter = int(os.getenv("IR_DROP_N_ITER", 2))
-        self.ir_drop_maxfev = int(os.getenv("IR_DROP_MAXFEV", 40))
+        self.Rs_ext = float(config.get("rs_ext", os.getenv("RS_EXT", 0.0)))
+        self.Rd_ext = float(config.get("rd_ext", os.getenv("RD_EXT", 0.0)))
+        self.ir_drop_n_iter = int(
+            config.get("ir_drop_n_iter", os.getenv("IR_DROP_N_ITER", 2))
+        )
+        self.ir_drop_maxfev = int(
+            config.get("ir_drop_maxfev", os.getenv("IR_DROP_MAXFEV", 40))
+        )
         print(
             f"==== IR Drop: Rs_ext={self.Rs_ext} Ω, Rd_ext={self.Rd_ext} Ω, "
             f"n_iter={self.ir_drop_n_iter}, maxfev={self.ir_drop_maxfev} ===="
@@ -177,8 +182,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # === Episode Control ===
         self.MAX_EPISODE_STEPS = int(os.getenv("MAX_EPISODE_STEPS", 1000))
         self.REWARD_NORM_THRESHOLD = float(os.getenv("REWARD_NORM_THRESHOLD", 100.0))
-        self.ARCSINH_HUBER_THRESHOLD = float(
-            os.getenv("ARCSINH_HUBER_THRESHOLD", 1e-5)
+        self.ARCSINH_HUBER_THRESHOLD = float(os.getenv("ARCSINH_HUBER_THRESHOLD", 1e-5))
+        self.NRMSE_THRESHOLD = float(
+            config.get("nrmse_threshold", os.getenv("NRMSE_THRESHOLD", 10.0))
         )
         self.REWARD_MIN = float(os.getenv("REWARD_MIN", -5.0))
         self.REWARD_MAX = float(os.getenv("REWARD_MAX", 5.0))
@@ -271,7 +277,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             self.observation_space.high,
         ).astype(np.float32)
 
-    def _get_info(self, arcsinh_huber_loss: float) -> dict:
+    def _get_info(
+        self,
+        arcsinh_huber_loss: float,
+        nrmse: float,
+        ir_drop_solver_diagnostics: list[dict[str, object]] | None = None,
+    ) -> dict:
         """
         Generates the info dictionary returned at each step.
 
@@ -281,9 +292,18 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         current_key_params = {
             name: self.current_params[name] for name in key_params_names
         }
+        diagnostics = ir_drop_solver_diagnostics or []
+        failures = [
+            diagnostic
+            for diagnostic in diagnostics
+            if not bool(diagnostic.get("converged", True))
+        ]
         return {
             "arcsinh_huber_loss": arcsinh_huber_loss,
+            "nrmse": nrmse,
             "current_key_params": current_key_params,
+            "ir_drop_solver_converged": not failures,
+            "ir_drop_solver_failures": failures,
         }
 
     def _transform_action(self, action: np.ndarray) -> np.ndarray:
@@ -365,6 +385,11 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # Optional: clip normalized reward to reasonable range
         # return np.clip(normalized_reward, -5.0, 5.0)
 
+    def _scaled_reward_from_nrmse(self, nrmse: float) -> float:
+        nrmse_fraction = float(nrmse) / 100.0
+        reward = -np.log10(nrmse_fraction + EPSILON)
+        return float(np.clip(reward, self.REWARD_MIN, self.REWARD_MAX))
+
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple:
         """
         Resets the environment to its initial state for a new episode.
@@ -383,7 +408,9 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         if self.random_init:
             for i, name in enumerate(key_params_names):
                 self.current_params[name] = float(
-                    self.np_random.uniform(self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i])
+                    self.np_random.uniform(
+                        self.KEY_PARAMS_MIN[i], self.KEY_PARAMS_MAX[i]
+                    )
                 )
                 # print(f"DEBUG: {name} initialized to {self.current_params[name]}")
         else:
@@ -397,11 +424,19 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         #     self.stagnation_cnt = 0
 
         # === Run initial simulation for all Vds conditions & calculate fit loss ===
-        _, init_err_vector, init_loss_vals = self._run_all_curve_condition_sim()
+        init_i_sim_matrix, init_err_vector, init_loss_vals = (
+            self._run_all_curve_condition_sim()
+        )
+        self.last_i_sim_current_matrix = init_i_sim_matrix
         avg_init_loss = float(np.mean(init_loss_vals))
+        init_nrmse = calculate_nrmse(self.all_i_meas_matrix, init_i_sim_matrix)
 
         observation = self._get_obs(init_err_vector)
-        info = self._get_info(avg_init_loss)
+        info = self._get_info(
+            avg_init_loss,
+            init_nrmse,
+            self.simulator.last_solver_diagnostics,
+        )
 
         return observation, info
 
@@ -432,22 +467,35 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         all_i_sim_matrix, current_err_vector, fit_loss_vals = (
             self._run_all_curve_condition_sim()
         )
+        self.last_i_sim_current_matrix = all_i_sim_matrix
 
-        # === Calculate arcsinh Huber loss for reward, termination, and info ===
+        # === Calculate NRMSE objective reward, diagnostics, and info ===
         current_loss = float(np.mean(fit_loss_vals))
-        raw_reward = self.metric.scaled_reward_from_loss(
-            current_loss,
-            reward_min=self.REWARD_MIN,
-            reward_max=self.REWARD_MAX,
-        )
-        reward = self._normalize_reward(float(raw_reward))
+        current_nrmse = calculate_nrmse(self.all_i_meas_matrix, all_i_sim_matrix)
+        solver_failures = [
+            diagnostic
+            for diagnostic in self.simulator.last_solver_diagnostics
+            if not bool(diagnostic.get("converged", True))
+        ]
+        solver_converged = not solver_failures
+        if solver_converged:
+            raw_reward = self._scaled_reward_from_nrmse(current_nrmse)
+            reward = self._normalize_reward(float(raw_reward))
+        else:
+            reward = self.REWARD_MIN
 
         # === Get the next observation and info ===
         observation = self._get_obs(current_err_vector)
-        info = self._get_info(current_loss)
+        info = self._get_info(
+            current_loss,
+            current_nrmse,
+            self.simulator.last_solver_diagnostics,
+        )
 
         # === Check Termination Conditions ===
-        terminated_success = current_loss < self.ARCSINH_HUBER_THRESHOLD
+        terminated_success = (
+            solver_converged and current_nrmse < self.NRMSE_THRESHOLD
+        )
         # if self.use_stagnation:
         #     if abs(reward) < self.STAGNATION_THRESHOLD:
         #         self.stagnation_cnt += 1
@@ -460,19 +508,26 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # else:
         #     terminated = terminated_success
         terminated = terminated_success
-        truncated = self.current_step >= self.MAX_EPISODE_STEPS
+        truncated = (
+            not solver_converged
+        ) or self.current_step >= self.MAX_EPISODE_STEPS
 
         if terminated_success:
             print(
-                "Success! Arcsinh Huber loss "
-                f"({current_loss:.6g}) has reached the threshold "
-                f"({self.ARCSINH_HUBER_THRESHOLD:.6g})."
+                "Success! NRMSE "
+                f"({current_nrmse:.6g}) has reached the threshold "
+                f"({self.NRMSE_THRESHOLD:.6g})."
             )
         # if self.use_stagnation and terminated_stagnation:
         #     print(
         #         f"Terminated due to stagnation ({self.STAGNATION_PATIENCE_STEPS} steps with little improvement)."
         #     )
-        if truncated and not terminated:
+        if solver_failures:
+            print(
+                "IR-drop solver failed to converge; truncating episode with "
+                f"reward={self.REWARD_MIN:.6g}."
+            )
+        elif truncated and not terminated:
             print("Reached maximum steps.")
 
         if terminated or truncated:
@@ -481,7 +536,10 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         return observation, reward, terminated, truncated, info
 
     def _get_plot_data_matrix(self):
-        return {
+        plot_data = {
             "vgs": self.vgs,
             "i_meas_dict": self.i_meas_dict,
         }
+        if hasattr(self, "last_i_sim_current_matrix"):
+            plot_data["i_sim_current_matrix"] = self.last_i_sim_current_matrix
+        return plot_data
