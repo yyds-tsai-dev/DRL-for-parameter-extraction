@@ -9,16 +9,19 @@ from ray.air.integrations.wandb import WandbLoggerCallback
 from ray.rllib.algorithms.ppo import PPO, PPOConfig
 
 from env.eehemt_env import EEHEMTEnv_Measure_VDS
+from evaluation.iv_curve_evaluation import evaluate_and_plot_iv_curve
 
 # from utils.callbacks import CustomEvalCallbacks
-from utils.plot import PlotCurve
+from utils.callbacks import TrainingMetricsCallback
+from utils.logging_config import configure_logging, get_logger
 
-if __name__ == "__main__":
+logger = get_logger(__name__)
+
+
+def build_arg_parser(current_dir: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    load_dotenv()
 
     # === Env arguments ===
-    current_dir = os.getcwd()
     parser.add_argument(
         "--va_file_path",
         type=str,
@@ -38,6 +41,36 @@ if __name__ == "__main__":
     parser.add_argument("--reduce_obs_err_dim", action="store_true")
     parser.add_argument("--reward_norm", action="store_true")
     parser.add_argument("--use_stagnation", action="store_true")
+    parser.add_argument(
+        "--rs_ext",
+        type=float,
+        default=float(os.getenv("RS_EXT", 0.0)),
+        help="External source resistance used by IR-drop correction.",
+    )
+    parser.add_argument(
+        "--rd_ext",
+        type=float,
+        default=float(os.getenv("RD_EXT", 0.0)),
+        help="External drain resistance used by IR-drop correction.",
+    )
+    parser.add_argument(
+        "--ir_drop_n_iter",
+        type=int,
+        default=int(os.getenv("IR_DROP_N_ITER", 2)),
+        help="Fixed-point warmup iterations before IR-drop fsolve.",
+    )
+    parser.add_argument(
+        "--ir_drop_maxfev",
+        type=int,
+        default=int(os.getenv("IR_DROP_MAXFEV", 40)),
+        help="Maximum fsolve evaluations for each IR-drop curve solve.",
+    )
+    parser.add_argument(
+        "--nrmse_threshold",
+        type=float,
+        default=float(os.getenv("NRMSE_THRESHOLD", 10.0)),
+        help="Success threshold for the NRMSE objective, expressed as a percentage.",
+    )
     parser.add_argument(
         "--observation_filter",
         choices=["NoFilter", "MeanStdFilter"],
@@ -67,32 +100,25 @@ if __name__ == "__main__":
         "--entropy_coeff", type=float, default=float(os.getenv("ENTROPY_COEFF", 5e-3))
     )
     parser.add_argument("--grad_clip", type=float, default=1.0)
-    parser.add_argument("--vf_loss_coeff", type=float, default=float(os.getenv("VF_LOSS_COEFF", 0.1)))
     parser.add_argument(
-        "--n_iterations", type=int, default=int(os.getenv("N_ITERATIONS", 100))
-    )  # 100 -> 50, 幾個 sample-train period
+        "--vf_loss_coeff", type=float, default=float(os.getenv("VF_LOSS_COEFF", 0.1))
+    )
     parser.add_argument(
-        "--restore_path", 
-        type=str, 
+        "--n_iterations",
+        type=int,
+        default=100,
+    )  # 幾個 sample-train period；script default wins over .env N_ITERATIONS.
+    parser.add_argument(
+        "--restore_path",
+        type=str,
         default=os.getenv("RESTORE_PATH", ""),
-        help="Path to the experiment directory to restore from"
+        help="Path to the experiment directory to restore from",
     )
     # parser.add_argument(
     #     "--episode_reward_mean",
     #     type=float,
     #     default=float(os.getenv("EPISODE_REWARD_MEAN", 5.0)),
     # )  # The mean reward to stop training
-
-    # === Learner arguments ===
-    device_count = th.cuda.device_count()
-    if device_count > 0:
-        num_learners = device_count // 2
-        if num_learners == 0:
-            num_learners = 1
-        num_gpus_per_learner = 1.0
-    else:
-        num_learners = int(os.getenv("NUM_LEARNERS", 1))
-        num_gpus_per_learner = 0.0
 
     # === Evaluation arguments ===
     # parser.add_argument("--log_y", action="store_true")
@@ -106,23 +132,36 @@ if __name__ == "__main__":
         type=int,
         default=int(os.getenv("EVALUATION_NUM_ENV_RUNNERS", 1)),
     )
+    return parser
 
-    args = parser.parse_args()
 
-    # === Algo Configure ===
-    config = (
+def build_env_config(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "va_file_path": args.va_file_path,
+        "csv_file_path": args.csv_file_path,
+        "random_init": args.random_init,
+        "reduce_obs_err_dim": args.reduce_obs_err_dim,
+        "reward_norm": args.reward_norm,
+        "use_stagnation": args.use_stagnation,
+        "rs_ext": args.rs_ext,
+        "rd_ext": args.rd_ext,
+        "ir_drop_n_iter": args.ir_drop_n_iter,
+        "ir_drop_maxfev": args.ir_drop_maxfev,
+        "nrmse_threshold": args.nrmse_threshold,
+    }
+
+
+def build_ppo_config(
+    args: argparse.Namespace,
+    *,
+    num_learners: int,
+    num_gpus_per_learner: float,
+) -> PPOConfig:
+    return (
         PPOConfig()
         .environment(
             env=EEHEMTEnv_Measure_VDS,
-            env_config={
-                "va_file_path": args.va_file_path,
-                # "simulate_target_data": args.simulate_target_data,
-                "csv_file_path": args.csv_file_path,
-                "random_init": args.random_init,
-                "reduce_obs_err_dim": args.reduce_obs_err_dim,
-                "reward_norm": args.reward_norm,
-                "use_stagnation": args.use_stagnation,
-            },
+            env_config=build_env_config(args),
         )
         .env_runners(
             num_env_runners=args.num_env_runners,
@@ -137,8 +176,8 @@ if __name__ == "__main__":
             grad_clip=args.grad_clip,
             # model={
             #     "fcnet_hiddens": [512, 512],
-                # "post_fcnet_hiddens": [512],
-                # "vf_share_layers": False,
+            # "post_fcnet_hiddens": [512],
+            # "vf_share_layers": False,
             # }
             vf_loss_coeff=args.vf_loss_coeff,
             vf_clip_param=20.0,
@@ -149,7 +188,7 @@ if __name__ == "__main__":
         )
         # .callbacks(CustomEvalCallbacks)
         .callbacks(
-            callbacks_class=PlotCurve,
+            callbacks_class=TrainingMetricsCallback,
         )
         .evaluation(
             # We only need one evaluation worker for plotting
@@ -157,9 +196,46 @@ if __name__ == "__main__":
             evaluation_num_env_runners=args.evaluation_num_env_runners,
             evaluation_duration=1,  # Only one episode for evaluation
             evaluation_duration_unit="episodes",
-            # custom_evaluation_function=eval_func,
+            custom_evaluation_function=evaluate_and_plot_iv_curve,
             evaluation_config={"explore": False},
         )
+    )
+
+
+def build_checkpoint_config() -> tune.CheckpointConfig:
+    return tune.CheckpointConfig(
+        num_to_keep=5,
+        checkpoint_score_attribute="env_runners/min_nrmse",
+        checkpoint_score_order="min",
+    )
+
+
+if __name__ == "__main__":
+    load_dotenv()
+    configure_logging()
+
+    current_dir = os.getcwd()
+    os.environ.setdefault("PROJECT_ROOT", current_dir)
+    parser = build_arg_parser(current_dir)
+
+    # === Learner arguments ===
+    device_count = th.cuda.device_count()
+    if device_count > 0:
+        num_learners = device_count // 2
+        if num_learners == 0:
+            num_learners = 1
+        num_gpus_per_learner = 1.0
+    else:
+        num_learners = int(os.getenv("NUM_LEARNERS", 1))
+        num_gpus_per_learner = 0.0
+
+    args = parser.parse_args()
+
+    # === Algo Configure ===
+    config = build_ppo_config(
+        args,
+        num_learners=num_learners,
+        num_gpus_per_learner=num_gpus_per_learner,
     )
 
     # tune_config = tune.TuneConfig(
@@ -172,6 +248,9 @@ if __name__ == "__main__":
     ray.init(
         ignore_reinit_error=True,
         runtime_env={
+            "env_vars": {
+                "PROJECT_ROOT": current_dir,
+            },
             "excludes": [
                 ".git/**",
                 ".venv/**",
@@ -187,8 +266,8 @@ if __name__ == "__main__":
         },
     )
     if args.restore_path:
-        print(f"\n==== Restoring training from: {args.restore_path} ====")
-        
+        logger.info("\n==== Restoring training from: %s ====", args.restore_path)
+
         tuner = tune.Tuner.restore(
             path=args.restore_path,
             trainable=PPO,
@@ -197,13 +276,9 @@ if __name__ == "__main__":
             param_space=config,
         )
     else:
-        print("\n==== Starting a NEW training run ====")
+        logger.info("\n==== Starting a NEW training run ====")
         stopping_criteria = {"training_iteration": args.n_iterations}
-        ckpt_config = tune.CheckpointConfig(
-            num_to_keep=5,
-            checkpoint_score_attribute="env_runners/episode_return_mean",
-            checkpoint_score_order="max",
-        )
+        ckpt_config = build_checkpoint_config()
         run_config = tune.RunConfig(
             name="EEHEMT_PPO",
             storage_path=checkpoint_dir,
@@ -229,12 +304,12 @@ if __name__ == "__main__":
             if result.metrics
         ]
         if not completed_iterations or max(completed_iterations) < args.n_iterations:
-            print(
+            logger.info(
                 "\n==== Training stopped before reaching the requested "
                 f"{args.n_iterations} iterations. ===="
             )
             raise SystemExit(130)
-    print("\n==== Training completed. ====")
+    logger.info("\n==== Training completed. ====")
 
     # === Save model ===
-    print(f"\n==== Final algorithm checkpoint saved to: {checkpoint_dir} ====")
+    logger.info("\n==== Final algorithm checkpoint saved to: %s ====", checkpoint_dir)
