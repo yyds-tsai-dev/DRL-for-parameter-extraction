@@ -298,12 +298,57 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             for diagnostic in diagnostics
             if not bool(diagnostic.get("converged", True))
         ]
-        return {
+        info = {
             "arcsinh_huber_loss": arcsinh_huber_loss,
             "nrmse": nrmse,
             "current_key_params": current_key_params,
             "ir_drop_solver_converged": not failures,
             "ir_drop_solver_failures": failures,
+        }
+        if hasattr(self, "episode_best_nrmse"):
+            info.update(self._get_episode_best_info())
+        return info
+
+    def _record_episode_best(
+        self,
+        *,
+        arcsinh_huber_loss: float,
+        nrmse: float,
+        i_sim_current_matrix: np.ndarray,
+    ) -> None:
+        self.episode_best_arcsinh_huber_loss = float(arcsinh_huber_loss)
+        self.episode_best_nrmse = float(nrmse)
+        self.episode_best_i_sim_current_matrix = np.array(
+            i_sim_current_matrix,
+            copy=True,
+        )
+        self.episode_best_key_params = {
+            name: float(self.current_params[name]) for name in key_params_names
+        }
+
+    def _maybe_record_episode_best(
+        self,
+        *,
+        arcsinh_huber_loss: float,
+        nrmse: float,
+        i_sim_current_matrix: np.ndarray,
+        solver_converged: bool,
+    ) -> None:
+        if not solver_converged:
+            return
+        if not hasattr(self, "episode_best_nrmse") or nrmse < self.episode_best_nrmse:
+            self._record_episode_best(
+                arcsinh_huber_loss=arcsinh_huber_loss,
+                nrmse=nrmse,
+                i_sim_current_matrix=i_sim_current_matrix,
+            )
+
+    def _get_episode_best_info(self) -> dict[str, object]:
+        return {
+            "episode_best_arcsinh_huber_loss": self.episode_best_arcsinh_huber_loss,
+            "episode_best_nrmse": self.episode_best_nrmse,
+            "episode_best_i_sim_current_matrix": self.episode_best_i_sim_current_matrix,
+            "episode_best_key_params": self.episode_best_key_params,
         }
 
     def _transform_action(self, action: np.ndarray) -> np.ndarray:
@@ -430,6 +475,11 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.last_i_sim_current_matrix = init_i_sim_matrix
         avg_init_loss = float(np.mean(init_loss_vals))
         init_nrmse = calculate_nrmse(self.all_i_meas_matrix, init_i_sim_matrix)
+        self._record_episode_best(
+            arcsinh_huber_loss=avg_init_loss,
+            nrmse=init_nrmse,
+            i_sim_current_matrix=init_i_sim_matrix,
+        )
 
         observation = self._get_obs(init_err_vector)
         info = self._get_info(
@@ -478,6 +528,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             if not bool(diagnostic.get("converged", True))
         ]
         solver_converged = not solver_failures
+        self._maybe_record_episode_best(
+            arcsinh_huber_loss=current_loss,
+            nrmse=current_nrmse,
+            i_sim_current_matrix=all_i_sim_matrix,
+            solver_converged=solver_converged,
+        )
         if solver_converged:
             raw_reward = self._scaled_reward_from_nrmse(current_nrmse)
             reward = self._normalize_reward(float(raw_reward))
@@ -532,6 +588,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         if terminated or truncated:
             info["i_sim_current_matrix"] = all_i_sim_matrix
+            info.update(self._get_episode_best_info())
 
         return observation, reward, terminated, truncated, info
 
@@ -542,4 +599,8 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         }
         if hasattr(self, "last_i_sim_current_matrix"):
             plot_data["i_sim_current_matrix"] = self.last_i_sim_current_matrix
+        if hasattr(self, "episode_best_i_sim_current_matrix"):
+            plot_data["episode_best_i_sim_current_matrix"] = (
+                self.episode_best_i_sim_current_matrix
+            )
         return plot_data

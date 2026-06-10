@@ -127,3 +127,35 @@ def test_ir_drop_non_convergence_penalizes_and_truncates(monkeypatch):
     assert truncated is True
     assert info["ir_drop_solver_converged"] is False
     assert len(info["ir_drop_solver_failures"]) == env.n_vds
+
+
+def test_reset_initializes_episode_best_snapshot():
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+
+    _, info = env.reset(seed=123)
+
+    assert info["episode_best_nrmse"] == info["nrmse"]
+    assert info["episode_best_arcsinh_huber_loss"] == info["arcsinh_huber_loss"]
+    assert np.array_equal(
+        info["episode_best_i_sim_current_matrix"],
+        env.last_i_sim_current_matrix,
+    )
+    assert info["episode_best_key_params"] == info["current_key_params"]
+
+
+def test_episode_end_info_includes_best_snapshot_even_when_final_is_worse(monkeypatch):
+    monkeypatch.setenv("MAX_EPISODE_STEPS", "1")
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+    _, reset_info = env.reset(seed=123)
+
+    _, _, terminated, truncated, step_info = env.step(
+        np.zeros(env.action_space.shape, dtype=np.float32)
+    )
+
+    assert terminated or truncated
+    assert step_info["episode_best_nrmse"] <= max(
+        reset_info["nrmse"],
+        step_info["nrmse"],
+    )
+    assert "episode_best_i_sim_current_matrix" in step_info
+    assert "episode_best_key_params" in step_info
