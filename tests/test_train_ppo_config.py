@@ -117,3 +117,12 @@ def test_build_ppo_config_wires_callbacks_and_driver_evaluation():
     assert config.observation_filter == "NoFilter"
     assert config.train_batch_size_per_learner == 128
     assert config.lr == 1e-5
+
+
+def test_train_ppo_script_requests_600_iterations():
+    with open("scripts/train_ppo.sh", encoding="utf-8") as script_file:
+        script = script_file.read()
+
+    assert "--n_iterations 600" in script
+    assert "--random_init" in script
+    assert "--reduce_obs_err_dim" in script
