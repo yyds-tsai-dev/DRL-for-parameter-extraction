@@ -282,6 +282,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         arcsinh_huber_loss: float,
         nrmse: float,
         ir_drop_solver_diagnostics: list[dict[str, object]] | None = None,
+        include_episode_best: bool = False,
     ) -> dict:
         """
         Generates the info dictionary returned at each step.
@@ -305,7 +306,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             "ir_drop_solver_converged": not failures,
             "ir_drop_solver_failures": failures,
         }
-        if hasattr(self, "episode_best_nrmse"):
+        if include_episode_best and hasattr(self, "episode_best_nrmse"):
             info.update(self._get_episode_best_info())
         return info
 
@@ -486,6 +487,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             avg_init_loss,
             init_nrmse,
             self.simulator.last_solver_diagnostics,
+            include_episode_best=True,
         )
 
         return observation, info
