@@ -327,6 +327,16 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             name: float(self.current_params[name]) for name in key_params_names
         }
 
+    def _clear_episode_best(self) -> None:
+        for attr in (
+            "episode_best_arcsinh_huber_loss",
+            "episode_best_nrmse",
+            "episode_best_i_sim_current_matrix",
+            "episode_best_key_params",
+        ):
+            if hasattr(self, attr):
+                delattr(self, attr)
+
     def _maybe_record_episode_best(
         self,
         *,
@@ -466,6 +476,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
         self.current_step = 0
+        self._clear_episode_best()
         # if self.use_stagnation:
         #     self.stagnation_cnt = 0
 
@@ -476,11 +487,17 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         self.last_i_sim_current_matrix = init_i_sim_matrix
         avg_init_loss = float(np.mean(init_loss_vals))
         init_nrmse = calculate_nrmse(self.all_i_meas_matrix, init_i_sim_matrix)
-        self._record_episode_best(
-            arcsinh_huber_loss=avg_init_loss,
-            nrmse=init_nrmse,
-            i_sim_current_matrix=init_i_sim_matrix,
+        init_solver_diagnostics = self.simulator.last_solver_diagnostics or []
+        init_solver_converged = all(
+            bool(diagnostic.get("converged", True))
+            for diagnostic in init_solver_diagnostics
         )
+        if init_solver_converged:
+            self._record_episode_best(
+                arcsinh_huber_loss=avg_init_loss,
+                nrmse=init_nrmse,
+                i_sim_current_matrix=init_i_sim_matrix,
+            )
 
         observation = self._get_obs(init_err_vector)
         info = self._get_info(
@@ -590,7 +607,8 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         if terminated or truncated:
             info["i_sim_current_matrix"] = all_i_sim_matrix
-            info.update(self._get_episode_best_info())
+            if hasattr(self, "episode_best_nrmse"):
+                info.update(self._get_episode_best_info())
 
         return observation, reward, terminated, truncated, info
 

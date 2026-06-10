@@ -143,6 +143,22 @@ def test_reset_initializes_episode_best_snapshot():
     assert info["episode_best_key_params"] == info["current_key_params"]
 
 
+def test_non_converged_reset_does_not_initialize_episode_best(monkeypatch):
+    import env.parameter_flow as parameter_flow
+
+    def fake_fsolve(*, func, x0, maxfev, full_output):
+        return np.asarray(x0, dtype=float), {}, 2, "iteration is not making progress"
+
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+    monkeypatch.setattr(parameter_flow, "fsolve", fake_fsolve)
+
+    _, info = env.reset(seed=123)
+
+    assert info["ir_drop_solver_converged"] is False
+    assert "episode_best_nrmse" not in info
+    assert "episode_best_i_sim_current_matrix" not in info
+
+
 def test_non_terminal_step_info_omits_episode_best_matrix(monkeypatch):
     monkeypatch.setenv("MAX_EPISODE_STEPS", "2")
     monkeypatch.setenv("NRMSE_THRESHOLD", "0.0")
