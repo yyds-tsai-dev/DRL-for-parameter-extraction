@@ -55,6 +55,7 @@ def test_training_metrics_callback_falls_back_to_final_nrmse_for_old_infos():
         {
             "arcsinh_huber_loss": 1.23e-4,
             "nrmse": 7.89,
+            "ir_drop_solver_converged": True,
         }
     )
 
@@ -75,3 +76,32 @@ def test_training_metrics_callback_falls_back_to_final_nrmse_for_old_infos():
     )
     assert ("episode_best_nrmse", 7.89, "mean") in metrics_logger.logged_values
     assert ("min_nrmse", 7.89, "min") in metrics_logger.logged_values
+
+
+def test_training_metrics_callback_does_not_fallback_for_non_converged_solver():
+    callback = TrainingMetricsCallback()
+    metrics_logger = FakeMetricsLogger()
+    episode = FakeEpisode(
+        {
+            "arcsinh_huber_loss": 1.23e-4,
+            "nrmse": 7.89,
+            "ir_drop_solver_converged": False,
+        }
+    )
+
+    callback.on_episode_end(
+        episode=episode,
+        env_runner=None,
+        metrics_logger=metrics_logger,
+        env=None,
+        env_index=0,
+        rl_module=None,
+    )
+
+    logged_keys = {key for key, _, _ in metrics_logger.logged_values}
+    assert not {
+        "episode_best_nrmse",
+        "min_nrmse",
+        "episode_best_arcsinh_huber_loss",
+        "min_arcsinh_huber_loss",
+    } & logged_keys
