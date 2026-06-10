@@ -1,0 +1,7 @@
+Put the trained model package ZIP downloaded from the platform here.
+
+Required ZIP contents:
+- training_config.json
+- features.json
+- committee_scalers.pkl
+- committee_models/

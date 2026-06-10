@@ -1,0 +1,4 @@
+Put an input CSV or Excel file here.
+
+Use the original raw feature columns expected by the model package.
+Categorical columns can stay in their raw text form, such as Structure = BCC/FCC/other.
