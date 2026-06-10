@@ -88,7 +88,7 @@ class TrainingMetricsCallback(DefaultCallbacks):
             metrics_logger.log_value(
                 "min_arcsinh_huber_loss",
                 self.min_arcsinh_huber_loss,
-                reduce="mean",
+                reduce="min",
             )
             logger.info(
                 "Episode-best arcsinh Huber loss: %.6g; "
@@ -109,7 +109,7 @@ class TrainingMetricsCallback(DefaultCallbacks):
             metrics_logger.log_value(
                 "min_nrmse",
                 self.min_nrmse,
-                reduce="mean",
+                reduce="min",
             )
             logger.info(
                 "Episode-best NRMSE: %.6g; Min NRMSE: %.6g",

@@ -56,6 +56,10 @@ class FakeEnv:
         }
         if hasattr(self, "last_i_sim_current_matrix"):
             plot_data["i_sim_current_matrix"] = self.last_i_sim_current_matrix
+        if hasattr(self, "episode_best_i_sim_current_matrix"):
+            plot_data["episode_best_i_sim_current_matrix"] = (
+                self.episode_best_i_sim_current_matrix
+            )
         return plot_data
 
 
@@ -504,3 +508,88 @@ def test_evaluate_and_plot_iv_curve_prefers_episode_best_matrix(monkeypatch):
     assert len(save_calls) == 1
     assert save_calls[0]["plot_data"]["i_sim_current_matrix"] is best_matrix
     assert save_calls[0]["fit_loss"] == 0.00123
+
+
+def test_evaluate_and_plot_iv_curve_prefers_env_episode_best_over_final_matrix(
+    monkeypatch,
+):
+    final_matrix = np.array(
+        [
+            [1.1e-3, 2.1e-3],
+            [2.1e-3, 3.1e-3],
+        ]
+    )
+    env_best_matrix = np.array(
+        [
+            [0.9e-3, 1.9e-3],
+            [1.9e-3, 2.9e-3],
+        ]
+    )
+    episode = FakeEpisode(
+        infos=[
+            {
+                "arcsinh_huber_loss": 0.00456,
+                "i_sim_current_matrix": final_matrix,
+            }
+        ],
+        env_steps=11,
+        agent_steps=22,
+    )
+    env = FakeEnv(curve_condition_values=[0.1, 0.2])
+    env.episode_best_i_sim_current_matrix = env_best_matrix
+    runner = FakeEnvRunner(
+        episodes=[episode],
+        metrics={"runner_metric": 2},
+        env=env,
+    )
+    eval_workers = FakeEvalWorkerGroup(runner)
+    algorithm = FakeAlgorithm()
+    save_calls = []
+    monkeypatch.setattr(
+        "evaluation.iv_curve_evaluation.save_evaluation_iv_curves",
+        lambda **kwargs: save_calls.append(kwargs),
+    )
+
+    evaluate_and_plot_iv_curve(algorithm, eval_workers)
+
+    assert len(save_calls) == 1
+    assert save_calls[0]["plot_data"]["i_sim_current_matrix"] is env_best_matrix
+
+
+def test_evaluate_and_plot_iv_curve_falls_back_when_best_fit_loss_is_none(
+    monkeypatch,
+):
+    matrix = np.array(
+        [
+            [1.1e-3, 2.1e-3],
+            [2.1e-3, 3.1e-3],
+        ]
+    )
+    episode = FakeEpisode(
+        infos=[
+            {
+                "episode_best_arcsinh_huber_loss": None,
+                "arcsinh_huber_loss": 0.00456,
+                "i_sim_current_matrix": matrix,
+            }
+        ],
+        env_steps=11,
+        agent_steps=22,
+    )
+    runner = FakeEnvRunner(
+        episodes=[episode],
+        metrics={"runner_metric": 2},
+        env=FakeEnv(curve_condition_values=[0.1, 0.2]),
+    )
+    eval_workers = FakeEvalWorkerGroup(runner)
+    algorithm = FakeAlgorithm()
+    save_calls = []
+    monkeypatch.setattr(
+        "evaluation.iv_curve_evaluation.save_evaluation_iv_curves",
+        lambda **kwargs: save_calls.append(kwargs),
+    )
+
+    evaluate_and_plot_iv_curve(algorithm, eval_workers)
+
+    assert len(save_calls) == 1
+    assert save_calls[0]["fit_loss"] == 0.00456
