@@ -459,3 +459,48 @@ def test_plot_dir_anchors_relative_plot_dir_to_project_root(monkeypatch):
     monkeypatch.setenv("ALGO_NAME", "ppo")
 
     assert _plot_dir().startswith("/project/result/iv_curve/ppo/")
+
+
+def test_evaluate_and_plot_iv_curve_prefers_episode_best_matrix(monkeypatch):
+    final_matrix = np.array(
+        [
+            [1.1e-3, 2.1e-3],
+            [2.1e-3, 3.1e-3],
+        ]
+    )
+    best_matrix = np.array(
+        [
+            [0.9e-3, 1.9e-3],
+            [1.9e-3, 2.9e-3],
+        ]
+    )
+    episode = FakeEpisode(
+        infos=[
+            {
+                "arcsinh_huber_loss": 0.00456,
+                "episode_best_arcsinh_huber_loss": 0.00123,
+                "i_sim_current_matrix": final_matrix,
+                "episode_best_i_sim_current_matrix": best_matrix,
+            }
+        ],
+        env_steps=11,
+        agent_steps=22,
+    )
+    runner = FakeEnvRunner(
+        episodes=[episode],
+        metrics={"runner_metric": 2},
+        env=FakeEnv(curve_condition_values=[0.1, 0.2]),
+    )
+    eval_workers = FakeEvalWorkerGroup(runner)
+    algorithm = FakeAlgorithm()
+    save_calls = []
+    monkeypatch.setattr(
+        "evaluation.iv_curve_evaluation.save_evaluation_iv_curves",
+        lambda **kwargs: save_calls.append(kwargs),
+    )
+
+    evaluate_and_plot_iv_curve(algorithm, eval_workers)
+
+    assert len(save_calls) == 1
+    assert save_calls[0]["plot_data"]["i_sim_current_matrix"] is best_matrix
+    assert save_calls[0]["fit_loss"] == 0.00123
