@@ -72,13 +72,16 @@ class TrainingMetricsCallback(DefaultCallbacks):
     ) -> None:
         infos = getattr(episode, "infos", None) or []
         last_info = infos[-1] if infos else {}
-        if "arcsinh_huber_loss" in last_info:
-            fit_loss = last_info["arcsinh_huber_loss"]
+        fit_loss = last_info.get(
+            "episode_best_arcsinh_huber_loss",
+            last_info.get("arcsinh_huber_loss"),
+        )
+        if fit_loss is not None:
             if fit_loss < self.min_arcsinh_huber_loss:
                 self.min_arcsinh_huber_loss = fit_loss
 
             metrics_logger.log_value(
-                "last_arcsinh_huber_loss",
+                "episode_best_arcsinh_huber_loss",
                 fit_loss,
                 reduce="mean",
             )
@@ -88,17 +91,18 @@ class TrainingMetricsCallback(DefaultCallbacks):
                 reduce="mean",
             )
             logger.info(
-                "Final arcsinh Huber loss: %.6g; Min arcsinh Huber loss: %.6g",
+                "Episode-best arcsinh Huber loss: %.6g; "
+                "Min arcsinh Huber loss: %.6g",
                 fit_loss,
                 self.min_arcsinh_huber_loss,
             )
-        if "nrmse" in last_info:
-            nrmse = last_info["nrmse"]
+        nrmse = last_info.get("episode_best_nrmse", last_info.get("nrmse"))
+        if nrmse is not None:
             if nrmse < self.min_nrmse:
                 self.min_nrmse = nrmse
 
             metrics_logger.log_value(
-                "last_nrmse",
+                "episode_best_nrmse",
                 nrmse,
                 reduce="mean",
             )
@@ -108,7 +112,7 @@ class TrainingMetricsCallback(DefaultCallbacks):
                 reduce="mean",
             )
             logger.info(
-                "Final NRMSE: %.6g; Min NRMSE: %.6g",
+                "Episode-best NRMSE: %.6g; Min NRMSE: %.6g",
                 nrmse,
                 self.min_nrmse,
             )
