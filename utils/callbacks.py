@@ -72,10 +72,13 @@ class TrainingMetricsCallback(DefaultCallbacks):
     ) -> None:
         infos = getattr(episode, "infos", None) or []
         last_info = infos[-1] if infos else {}
-        fit_loss = last_info.get(
-            "episode_best_arcsinh_huber_loss",
-            last_info.get("arcsinh_huber_loss"),
-        )
+        can_fallback_to_final = last_info.get("ir_drop_solver_converged") is not False
+        if "episode_best_arcsinh_huber_loss" in last_info:
+            fit_loss = last_info.get("episode_best_arcsinh_huber_loss")
+        elif can_fallback_to_final:
+            fit_loss = last_info.get("arcsinh_huber_loss")
+        else:
+            fit_loss = None
         if fit_loss is not None:
             if fit_loss < self.min_arcsinh_huber_loss:
                 self.min_arcsinh_huber_loss = fit_loss
@@ -96,7 +99,12 @@ class TrainingMetricsCallback(DefaultCallbacks):
                 fit_loss,
                 self.min_arcsinh_huber_loss,
             )
-        nrmse = last_info.get("episode_best_nrmse", last_info.get("nrmse"))
+        if "episode_best_nrmse" in last_info:
+            nrmse = last_info.get("episode_best_nrmse")
+        elif can_fallback_to_final:
+            nrmse = last_info.get("nrmse")
+        else:
+            nrmse = None
         if nrmse is not None:
             if nrmse < self.min_nrmse:
                 self.min_nrmse = nrmse
