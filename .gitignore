@@ -22,6 +22,9 @@ __pycache__/
 # Augment Setup
 .augment/
 
+# Compact files
+**/*.7z
+
 # Test 文件
 test/*
 !test/test_measure.ipynb
@@ -37,3 +40,4 @@ result/*
 !result/iv_curve/08-29-*
 
 # .env
+.env_old
