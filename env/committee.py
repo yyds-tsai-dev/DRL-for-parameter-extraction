@@ -6,20 +6,35 @@ from copy import deepcopy
 import joblib
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 from joblib import Parallel, delayed
 from scipy.stats import pearsonr
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, RobustScaler, StandardScaler
-from tensorflow import keras
 
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices("GPU")))
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+except ModuleNotFoundError:
+    tf = None
+    keras = None
 
 SINGLE_MODEL_REGRESSORS = {"MLP", "RF", "SVR", "KNN", "GBR", "GPR"}
 XGB_REGRESSORS = {"XGB"}
 CLASSIFICATION_MODELS = {"GPC", "MLP_CLS"}
 CLUSTERING_MODELS = {"KMeans", "Hierarchical"}
 NON_REGRESSION_MODELS = CLASSIFICATION_MODELS | CLUSTERING_MODELS
+
+
+def _require_tensorflow():
+    if tf is None:
+        raise ModuleNotFoundError("TensorFlow is required for Keras/MLP model operations.")
+    return tf
+
+
+def _require_keras():
+    if keras is None:
+        raise ModuleNotFoundError("TensorFlow is required for loading Keras model packages.")
+    return keras
 
 
 def make_input_scaler(config):
@@ -136,13 +151,14 @@ def train_committee2_parallel(model_template, config, samples=64, n_jobs=-1):
         return requested_n_jobs
 
     def _configure_tf_threads():
+        tensorflow = _require_tensorflow()
         intra_threads = getattr(config, "tf_intra_op_threads", None)
         inter_threads = getattr(config, "tf_inter_op_threads", None)
         try:
             if intra_threads is not None:
-                tf.config.threading.set_intra_op_parallelism_threads(int(intra_threads))
+                tensorflow.config.threading.set_intra_op_parallelism_threads(int(intra_threads))
             if inter_threads is not None:
-                tf.config.threading.set_inter_op_parallelism_threads(int(inter_threads))
+                tensorflow.config.threading.set_inter_op_parallelism_threads(int(inter_threads))
         except RuntimeError:
             pass
 
@@ -402,7 +418,7 @@ def load_models_from_folder(folder_path):
     for filename in sorted(os.listdir(folder_path), key=_sort_key):
         filepath = os.path.join(folder_path, filename)
         if filename.endswith(".keras"):
-            model = keras.models.load_model(filepath)
+            model = _require_keras().models.load_model(filepath)
             models.append(model)
         elif filename.endswith(".pkl"):
             with open(filepath, "rb") as f:
@@ -412,7 +428,7 @@ def load_models_from_folder(folder_path):
             models.append(model)
         elif os.path.isdir(filepath):
             try:
-                model = keras.models.load_model(filepath)
+                model = _require_keras().models.load_model(filepath)
                 models.append(model)
             except Exception as e:
                 print(f"Can't import model: {filepath}, Error: {e}")

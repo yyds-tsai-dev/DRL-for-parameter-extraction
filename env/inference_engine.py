@@ -6,9 +6,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts import load_data
-from utils import committee, file_process
-
 
 class _InferenceConfig:
     """Minimal config object required by committee.test_committee_regressor."""
@@ -45,6 +42,8 @@ def _to_dataframe(input_data):
     if isinstance(input_data, pd.DataFrame):
         return input_data.copy()
     if isinstance(input_data, (str, os.PathLike)):
+        from . import load_data
+
         path = str(input_data)
         df, _ = load_data.read_table_flexible(path)
         return df
@@ -70,6 +69,10 @@ class InferenceModel:
     """
 
     def __init__(self, model_package_path, extract_dir=None):
+        from . import committee, file_process
+
+        self._committee = committee
+        self._file_process = file_process
         self.model_package_path = Path(model_package_path)
         if not self.model_package_path.exists():
             raise FileNotFoundError(f"Model package not found: {self.model_package_path}")
@@ -84,8 +87,8 @@ class InferenceModel:
                 shutil.rmtree(self.extract_dir)
             self.extract_dir.mkdir(parents=True, exist_ok=True)
 
-        file_process.unzip_strip_top_level(str(self.model_package_path), str(self.extract_dir))
-        self.package = file_process.load_model_package(str(self.extract_dir))
+        self._file_process.unzip_strip_top_level(str(self.model_package_path), str(self.extract_dir))
+        self.package = self._file_process.load_model_package(str(self.extract_dir))
         self.metadata = self.package["metadata"]
         self.model_type = self.package["model_type"]
 
@@ -98,13 +101,13 @@ class InferenceModel:
         if not self.targets:
             raise ValueError("No target columns were found in training_config.json.")
 
-        self.models = committee.load_models_from_folder(self.package["model_folder"])
-        self.scalers = committee.load_scalers(self.package["model_folder"])
+        self.models = self._committee.load_models_from_folder(self.package["model_folder"])
+        self.scalers = self._committee.load_scalers(self.package["model_folder"])
         self.config = _InferenceConfig(self.model_type, self.targets)
 
     def prepare_features(self, input_data):
         raw_df = _to_dataframe(input_data)
-        encoded_df = file_process.apply_package_feature_encoding(raw_df, self.metadata)
+        encoded_df = self._file_process.apply_package_feature_encoding(raw_df, self.metadata)
         missing_features = [feature for feature in self.model_features if feature not in encoded_df.columns]
         if missing_features:
             raise ValueError(
@@ -123,7 +126,7 @@ class InferenceModel:
 
     def predict(self, input_data, include_input=True):
         raw_df, x_df = self.prepare_features(input_data)
-        y_pred, y_std, _, _ = committee.test_committee_regressor(
+        y_pred, y_std, _, _ = self._committee.test_committee_regressor(
             self.config,
             self.models,
             self.scalers,
@@ -143,7 +146,7 @@ class InferenceModel:
 
     def predict_array(self, input_data):
         raw_df, x_df = self.prepare_features(input_data)
-        y_pred, y_std, _, _ = committee.test_committee_regressor(
+        y_pred, y_std, _, _ = self._committee.test_committee_regressor(
             self.config,
             self.models,
             self.scalers,

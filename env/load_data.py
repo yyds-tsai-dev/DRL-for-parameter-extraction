@@ -2,9 +2,6 @@ import numpy as np
 import pandas as pd
 import importlib.util
 import json
-from tensorflow.keras.regularizers import L1, L2, L1L2
-from tensorflow.keras.constraints import MaxNorm, NonNeg, UnitNorm, MinMaxNorm
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 try:
     from IPython.display import display
@@ -14,6 +11,30 @@ except ModuleNotFoundError:
 
 
 CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp950", "big5", "gb18030", "latin1")
+
+
+def _keras_regularizers():
+    try:
+        from tensorflow.keras.regularizers import L1, L2, L1L2
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("TensorFlow is required for Keras regularizer config.") from exc
+    return L1, L2, L1L2
+
+
+def _keras_constraints():
+    try:
+        from tensorflow.keras.constraints import MaxNorm, NonNeg, UnitNorm, MinMaxNorm
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("TensorFlow is required for Keras constraint config.") from exc
+    return MaxNorm, NonNeg, UnitNorm, MinMaxNorm
+
+
+def _sklearn_metrics():
+    try:
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("scikit-learn is required for metric config.") from exc
+    return mean_absolute_error, mean_squared_error, r2_score
 
 
 def read_csv_flexible(path, **kwargs):
@@ -58,6 +79,7 @@ def coerce_feature_columns_numeric(df, feature_columns):
 def parse_regularizer(reg_config):
     if not reg_config:
         return None
+    L1, L2, L1L2 = _keras_regularizers()
     reg_type = reg_config.get("type")
     value = reg_config.get("value")
     if reg_type == "L1":
@@ -102,6 +124,7 @@ class Config:
             model          = self.TRAIN.get("Model", {})
             self.regressors = model.get("Regressors", {})
             if self.regressors.get("type") == "MLP":
+                MaxNorm, NonNeg, UnitNorm, MinMaxNorm = _keras_constraints()
                 mlp_config = self.regressors.get("MLP", {})
                 self.hidden_layer_sizes    = mlp_config.get('hidden_layer_sizes')
                 self.activation            = mlp_config.get("activation")
@@ -202,10 +225,13 @@ class Config:
 
                 eval_metric = xgb_config.get('eval_metric')
                 if eval_metric == "mean_squared_error":
+                    _, mean_squared_error, _ = _sklearn_metrics()
                     self.eval_metric = mean_squared_error
                 elif eval_metric == "mean_absolute_error":
+                    mean_absolute_error, _, _ = _sklearn_metrics()
                     self.eval_metric = mean_absolute_error
                 elif eval_metric == "r2_score":
+                    _, _, r2_score = _sklearn_metrics()
                     self.eval_metric = r2_score
                 else:
                     self.eval_metric = None
