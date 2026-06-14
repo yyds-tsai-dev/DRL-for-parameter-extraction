@@ -8,6 +8,7 @@
 .pytest_cache/
 .ruff_cache/
 demo/demo.tar.gz
+**/.nfs*
 
 # VSCode 設定
 .vscode/
@@ -21,6 +22,9 @@ __pycache__/
 
 # Augment Setup
 .augment/
+
+# Compact files
+**/*.7z
 
 # Test 文件
 test/*
@@ -37,3 +41,4 @@ result/*
 !result/iv_curve/08-29-*
 
 # .env
+.env_old

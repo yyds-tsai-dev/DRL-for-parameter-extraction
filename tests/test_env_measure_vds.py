@@ -127,3 +127,88 @@ def test_ir_drop_non_convergence_penalizes_and_truncates(monkeypatch):
     assert truncated is True
     assert info["ir_drop_solver_converged"] is False
     assert len(info["ir_drop_solver_failures"]) == env.n_vds
+
+
+def test_reset_initializes_episode_best_snapshot():
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+
+    _, info = env.reset(seed=123)
+
+    assert info["episode_best_nrmse"] == info["nrmse"]
+    assert info["episode_best_arcsinh_huber_loss"] == info["arcsinh_huber_loss"]
+    assert np.array_equal(
+        info["episode_best_i_sim_current_matrix"],
+        env.last_i_sim_current_matrix,
+    )
+    assert info["episode_best_key_params"] == info["current_key_params"]
+
+
+def test_non_converged_reset_does_not_initialize_episode_best(monkeypatch):
+    import env.parameter_flow as parameter_flow
+
+    def fake_fsolve(*, func, x0, maxfev, full_output):
+        return np.asarray(x0, dtype=float), {}, 2, "iteration is not making progress"
+
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+    monkeypatch.setattr(parameter_flow, "fsolve", fake_fsolve)
+
+    _, info = env.reset(seed=123)
+
+    assert info["ir_drop_solver_converged"] is False
+    assert "episode_best_nrmse" not in info
+    assert "episode_best_i_sim_current_matrix" not in info
+
+
+def test_non_terminal_step_info_omits_episode_best_matrix(monkeypatch):
+    monkeypatch.setenv("MAX_EPISODE_STEPS", "2")
+    monkeypatch.setenv("NRMSE_THRESHOLD", "0.0")
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+    env.reset(seed=123)
+
+    _, _, terminated, truncated, step_info = env.step(
+        np.zeros(env.action_space.shape, dtype=np.float32)
+    )
+
+    assert terminated is False
+    assert truncated is False
+    assert "episode_best_i_sim_current_matrix" not in step_info
+
+
+def test_episode_end_info_includes_best_snapshot(monkeypatch):
+    monkeypatch.setenv("MAX_EPISODE_STEPS", "1")
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+    _, reset_info = env.reset(seed=123)
+
+    _, _, terminated, truncated, step_info = env.step(
+        np.zeros(env.action_space.shape, dtype=np.float32)
+    )
+
+    assert terminated or truncated
+    assert step_info["episode_best_nrmse"] <= max(
+        reset_info["nrmse"],
+        step_info["nrmse"],
+    )
+    assert "episode_best_i_sim_current_matrix" in step_info
+    assert "episode_best_key_params" in step_info
+
+
+def test_non_converged_candidate_does_not_update_episode_best():
+    env = EEHEMTEnv_Measure_VDS(_env_config())
+    env.reset(seed=123)
+    previous_best_nrmse = env.episode_best_nrmse
+    previous_best_loss = env.episode_best_arcsinh_huber_loss
+    previous_best_matrix = np.array(env.episode_best_i_sim_current_matrix, copy=True)
+    previous_best_params = dict(env.episode_best_key_params)
+    synthetic_better_matrix = np.full_like(previous_best_matrix, 42.0)
+
+    env._maybe_record_episode_best(
+        arcsinh_huber_loss=previous_best_loss / 2.0,
+        nrmse=previous_best_nrmse / 2.0,
+        i_sim_current_matrix=synthetic_better_matrix,
+        solver_converged=False,
+    )
+
+    assert env.episode_best_nrmse == previous_best_nrmse
+    assert env.episode_best_arcsinh_huber_loss == previous_best_loss
+    assert np.array_equal(env.episode_best_i_sim_current_matrix, previous_best_matrix)
+    assert env.episode_best_key_params == previous_best_params

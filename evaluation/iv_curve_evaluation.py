@@ -169,7 +169,11 @@ def evaluate_and_plot_iv_curve(algorithm, eval_workers):
         return eval_results, env_steps, agent_steps
 
     curve_condition_values, plot_data = static_plot_data
-    i_sim_current_matrix = final_info.get("i_sim_current_matrix")
+    i_sim_current_matrix = final_info.get("episode_best_i_sim_current_matrix")
+    if i_sim_current_matrix is None:
+        i_sim_current_matrix = plot_data.get("episode_best_i_sim_current_matrix")
+    if i_sim_current_matrix is None:
+        i_sim_current_matrix = final_info.get("i_sim_current_matrix")
     if i_sim_current_matrix is None:
         i_sim_current_matrix = plot_data.get("i_sim_current_matrix")
     if i_sim_current_matrix is None:
@@ -182,7 +186,9 @@ def evaluate_and_plot_iv_curve(algorithm, eval_workers):
     plot_data["i_sim_current_matrix"] = i_sim_current_matrix
     evaluation_index = _next_evaluation_index(algorithm)
     training_iteration = int(getattr(algorithm, "iteration", 0) or 0)
-    fit_loss = final_info.get("arcsinh_huber_loss")
+    fit_loss = final_info.get("episode_best_arcsinh_huber_loss")
+    if fit_loss is None:
+        fit_loss = final_info.get("arcsinh_huber_loss")
 
     try:
         save_evaluation_iv_curves(
