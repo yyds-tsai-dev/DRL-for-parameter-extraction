@@ -16,6 +16,8 @@ The hardness model package accepts eight fraction inputs: `frac_Al`, `frac_Cr`, 
 - Project raw policy actions into Feasible Material Compositions.
 - Rank hardness checkpoints by the highest unclipped predicted hardness.
 - Save hardness evaluation outputs as structured CSV/JSON rather than I-V curve plots.
+- Use environment-specific W&B project names from the selected training module.
+- Accept the W&B API key through CLI args instead of relying only on environment variables.
 - Keep XGB hardness inference usable without TensorFlow installed.
 
 ## Non-Goals
@@ -43,7 +45,7 @@ utils/composition_projection.py
 evaluation/hardness_evaluation.py
 ```
 
-`train_ppo.py` will own only CLI entry and dispatch. It will pre-parse `--env`, let the selected training module register domain-specific CLI arguments, then parse the full argument set. `training/ppo_common.py` will own shared PPO/Ray/Tune setup: common PPO hyperparameters, learner and GPU resolution, Ray runtime configuration, restore handling, and new-run `Tuner` construction. Environment-specific modules will provide env class, env config, callbacks, evaluation function, checkpoint config, experiment name, and domain-specific CLI arguments.
+`train_ppo.py` will own only CLI entry and dispatch. It will pre-parse `--env`, let the selected training module register domain-specific CLI arguments, then parse the full argument set. `training/ppo_common.py` will own shared PPO/Ray/Tune setup: common PPO hyperparameters, learner and GPU resolution, Ray runtime configuration, restore handling, W&B callback construction, and new-run `Tuner` construction. Environment-specific modules will provide env class, env config, callbacks, evaluation function, checkpoint config, experiment name, W&B project name, and domain-specific CLI arguments.
 
 The existing `scripts/train_ppo.sh` file will keep its name, but it will call `train_ppo.py`. Because `--env` defaults to `hardness`, the script will run hardness training by default. EEHEMT training must pass `--env eehemt`.
 
@@ -143,6 +145,26 @@ success_rate_650
 
 EEHEMT callbacks and checkpoint ranking remain NRMSE-oriented.
 
+W&B logging remains part of the shared training path, but project naming is environment-specific. The hardness module should use:
+
+```text
+PPO_for_material_hardness_optimization
+```
+
+The EEHEMT module should keep the existing EEHEMT-oriented project name:
+
+```text
+PPO_for_multi_I-V_curves_fitting_in_EEHEMT
+```
+
+`training/ppo_common.py` should build the `WandbLoggerCallback` from the selected module's project name and the shared CLI arg:
+
+```text
+--wandb_api_key
+```
+
+The arg should default to `WANDB_API_KEY` from the environment when omitted. This keeps existing environment-variable usage working while allowing explicit API-key injection from scripts or job launchers.
+
 ## Evaluation
 
 Hardness evaluation will not call I-V curve plotting. It will save structured artifacts under a hardness-specific evaluation directory.
@@ -184,7 +206,7 @@ The existing inference utility modules already use lazy TensorFlow imports. The 
 ## Data Flow
 
 1. `train_ppo.py` parses shared args and `--env`.
-2. The selected training module registers env-specific args and builds env-specific wiring.
+2. The selected training module registers env-specific args and builds env-specific wiring, including the W&B project name.
 3. `training/ppo_common.py` builds shared PPO/Ray/Tune objects.
 4. RLlib creates `MaterialHardnessEnv` for `--env hardness`.
 5. The policy emits a raw six-dimensional action.
@@ -217,6 +239,8 @@ Add or update tests for:
 - Dense reward clips to `[-3, 3]` but checkpoint metrics use unclipped predicted hardness.
 - `train_ppo.py` defaults to `--env hardness` and dispatches `--env eehemt`.
 - Hardness PPO config uses `env_runners/max_predicted_hardness` with `max` ordering.
+- W&B callback construction uses the selected environment's project name.
+- `--wandb_api_key` defaults from `WANDB_API_KEY` and can be overridden explicitly.
 - `scripts/train_ppo.sh` calls `train_ppo.py`.
 - Importing the XGB inference path does not require TensorFlow.
 
