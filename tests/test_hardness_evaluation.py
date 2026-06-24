@@ -1,6 +1,5 @@
 import json
 from datetime import date
-from pathlib import Path
 
 import pandas as pd
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS, EVALUATION_RESULTS
