@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -121,6 +122,14 @@ def test_train_ppo_defaults_to_hardness_env():
     args = build_arg_parser("/project").parse_args([])
 
     assert args.env == "hardness"
+
+
+def test_train_ppo_script_calls_new_entrypoint():
+    project_root = Path(__file__).resolve().parents[1]
+    script = (project_root / "scripts" / "train_ppo.sh").read_text()
+
+    assert "python train_ppo.py" in script
+    assert "train_ppo_tune.py" not in script
 
 
 def test_train_ppo_can_build_eehemt_parser_from_argv():
