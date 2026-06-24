@@ -158,6 +158,10 @@ def _next_evaluation_index(algorithm: Any) -> int:
     return evaluation_index
 
 
+def _training_iteration(algorithm: Any) -> int:
+    return int(getattr(algorithm, "iteration", 0) or 0) + 1
+
+
 def _success_rate_from_info(final_info: dict[str, Any]) -> float:
     success_rate = final_info.get("success_rate_650")
     if success_rate is not None:
@@ -189,7 +193,7 @@ def evaluate_and_save_hardness(
     predicted_hardness = final_info.get("predicted_hardness")
     record = {
         "evaluation_index": _next_evaluation_index(algorithm),
-        "training_iteration": int(getattr(algorithm, "iteration", 0) or 0),
+        "training_iteration": _training_iteration(algorithm),
         "best_composition": dict(
             final_info.get("best_composition")
             or final_info.get("composition")

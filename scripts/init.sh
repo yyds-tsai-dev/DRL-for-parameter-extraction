@@ -6,4 +6,4 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
 source .venv/bin/activate
 conda deactivate
-uv run train_ppo_tune.py --n_iterations 100 || echo "Initializing script failed" \
+uv run train_ppo.py --env eehemt --n_iterations 100 || echo "Initializing script failed" \

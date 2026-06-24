@@ -196,22 +196,22 @@ def test_evaluate_and_save_hardness_writes_artifact(tmp_path):
     assert algorithm.metrics.peek_calls == [metric_key]
     assert algorithm._hardness_evaluation_index == 1
 
-    json_payload = json.loads((tmp_path / "eval_000001_iter_000007.json").read_text())
+    json_payload = json.loads((tmp_path / "eval_000001_iter_000008.json").read_text())
     assert json_payload == {
         "evaluation_index": 1,
-        "training_iteration": 7,
+        "training_iteration": 8,
         "best_composition": {"frac_Al": 0.2, "frac_Ni": 0.18},
         "predicted_hardness": 720.0,
         "max_predicted_hardness": 720.0,
         "uncertainty_hardness": 11.0,
         "success_rate_650": 1.0,
     }
-    csv_row = pd.read_csv(tmp_path / "eval_000001_iter_000007.csv").iloc[0].to_dict()
+    csv_row = pd.read_csv(tmp_path / "eval_000001_iter_000008.csv").iloc[0].to_dict()
     assert csv_row["best_frac_Al"] == 0.2
     assert csv_row["best_frac_Ni"] == 0.18
 
     evaluate_and_save_hardness(algorithm, eval_workers, output_dir=tmp_path)
 
     assert algorithm._hardness_evaluation_index == 2
-    assert (tmp_path / "eval_000002_iter_000007.csv").exists()
-    assert (tmp_path / "eval_000002_iter_000007.json").exists()
+    assert (tmp_path / "eval_000002_iter_000008.csv").exists()
+    assert (tmp_path / "eval_000002_iter_000008.json").exists()
