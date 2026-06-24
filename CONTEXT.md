@@ -37,7 +37,7 @@ A material composition whose Tunable Composition Fractions each stay within 0.05
 _Avoid_: unconstrained fraction vector, raw action vector
 
 **Hardness Objective**:
-The material optimization goal for policy quality: find a Feasible Material Composition whose predicted hardness exceeds the target threshold.
+The material optimization goal for policy quality: find a Feasible Material Composition whose predicted hardness is at least 650. Model uncertainty may be inspected as a diagnostic, but it is not part of the first-pass objective.
 _Avoid_: NRMSE Objective, fit objective
 
 ## Example Dialogue
@@ -61,3 +61,7 @@ Domain expert: "No. In the six-element setup, Cu and Mo are Fixed Composition Fr
 Dev: "Can a policy produce six fractions that add up to more than one?"
 
 Domain expert: "No. A valid candidate must be a Feasible Material Composition."
+
+Dev: "Should uncertainty reduce the reward when optimizing hardness?"
+
+Domain expert: "Not in the first pass. Use predicted hardness for the Hardness Objective and keep uncertainty as a diagnostic."
