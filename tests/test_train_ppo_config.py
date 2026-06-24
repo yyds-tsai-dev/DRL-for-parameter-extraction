@@ -6,6 +6,7 @@ from env.eehemt_env import EEHEMTEnv_Measure_VDS
 from env.material_hardness_env import MaterialHardnessEnv
 from evaluation.hardness_evaluation import evaluate_and_save_hardness
 from evaluation.iv_curve_evaluation import evaluate_and_plot_iv_curve
+from train_ppo import build_arg_parser, select_training_module
 from training import eehemt_ppo, hardness_ppo
 from training.ppo_common import build_common_arg_parser
 from utils.callbacks import TrainingMetricsCallback
@@ -114,6 +115,37 @@ def test_hardness_checkpoint_config_ranks_by_highest_predicted_hardness():
         == "env_runners/max_predicted_hardness"
     )
     assert checkpoint_config.checkpoint_score_order == "max"
+
+
+def test_train_ppo_defaults_to_hardness_env():
+    args = build_arg_parser("/project").parse_args([])
+
+    assert args.env == "hardness"
+
+
+def test_train_ppo_can_build_eehemt_parser_from_argv():
+    parser = build_arg_parser("/project", ["--env", "eehemt"])
+
+    args = parser.parse_args(
+        ["--env", "eehemt", "--va_file_path", "/tmp/model.va"]
+    )
+
+    assert args.env == "eehemt"
+    assert args.va_file_path == "/tmp/model.va"
+
+
+def test_select_training_module_dispatches_by_env():
+    hardness_module = select_training_module("hardness")
+    eehemt_module = select_training_module("eehemt")
+
+    assert (
+        hardness_module.HARDNESS_WANDB_PROJECT
+        == "PPO_for_material_hardness_optimization"
+    )
+    assert (
+        eehemt_module.EEHEMT_WANDB_PROJECT
+        == "PPO_for_multi_I-V_curves_fitting_in_EEHEMT"
+    )
 
 
 def test_eehemt_ppo_config_wires_callbacks_and_driver_evaluation():
