@@ -35,7 +35,9 @@ def build_common_arg_parser(current_dir):
     parser.add_argument(
         "--vf_loss_coeff", type=float, default=float(os.getenv("VF_LOSS_COEFF", 0.1))
     )
-    parser.add_argument("--n_iterations", type=int, default=100)
+    parser.add_argument(
+        "--n_iterations", type=int, default=int(os.getenv("N_ITERATIONS", 100))
+    )
     parser.add_argument("--restore_path", type=str, default=os.getenv("RESTORE_PATH", ""))
     parser.add_argument(
         "--evaluation_interval",
