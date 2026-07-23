@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from ray import tune
 from ray.rllib.algorithms.ppo import PPO
 
-from training import eehemt_ppo, hardness_ppo
+from problems import registry as problem_registry
 from training.ppo_common import (
     build_common_arg_parser,
     build_wandb_callback,
@@ -20,11 +20,7 @@ logger = get_logger(__name__)
 
 
 def select_training_module(env_name: str) -> ModuleType:
-    if env_name == "hardness":
-        return hardness_ppo
-    if env_name == "eehemt":
-        return eehemt_ppo
-    raise ValueError(f"Unsupported training environment: {env_name}")
+    return problem_registry.get(env_name).module
 
 
 def build_arg_parser(
@@ -32,7 +28,9 @@ def build_arg_parser(
     argv: list[str] | None = None,
 ) -> argparse.ArgumentParser:
     pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--env", choices=["hardness", "eehemt"], default="hardness")
+    pre_parser.add_argument(
+        "--env", choices=problem_registry.names(), default="hardness"
+    )
     pre_args, _ = pre_parser.parse_known_args([] if argv is None else argv)
 
     training_module = select_training_module(pre_args.env)
@@ -62,11 +60,8 @@ def build_ray_runtime_env(current_dir: str) -> dict[str, object]:
 
 
 def _wandb_project_name(env_name: str, training_module: ModuleType) -> str:
-    if env_name == "hardness":
-        return training_module.HARDNESS_WANDB_PROJECT
-    if env_name == "eehemt":
-        return training_module.EEHEMT_WANDB_PROJECT
-    raise ValueError(f"Unsupported training environment: {env_name}")
+    del training_module  # kept for call-site stability; registry owns the mapping
+    return problem_registry.get(env_name).wandb_project
 
 
 def main() -> None:

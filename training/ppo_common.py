@@ -4,10 +4,14 @@ import os
 import torch as th
 from ray.air.integrations.wandb import WandbLoggerCallback
 
+from problems import registry as problem_registry
+
 
 def build_common_arg_parser(current_dir):
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--env", choices=["hardness", "eehemt"], default="hardness")
+    parser.add_argument(
+        "--env", choices=problem_registry.names(), default="hardness"
+    )
     parser.add_argument(
         "--observation_filter",
         choices=["NoFilter", "MeanStdFilter"],
