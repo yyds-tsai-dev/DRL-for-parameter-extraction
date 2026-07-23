@@ -3,6 +3,7 @@ import os
 
 import torch as th
 from ray.air.integrations.wandb import WandbLoggerCallback
+from ray.rllib.algorithms.ppo import PPOConfig
 
 from problems import registry as problem_registry
 
@@ -73,3 +74,52 @@ def resolve_learner_resources():
 
 def build_wandb_callback(args, *, project_name):
     return WandbLoggerCallback(project=project_name, api_key=args.wandb_api_key)
+
+
+def build_base_ppo_config(
+    args,
+    *,
+    num_learners: int,
+    num_gpus_per_learner: float,
+    env_cls,
+    env_config: dict,
+    callbacks_class,
+    custom_evaluation_function,
+) -> PPOConfig:
+    """One PPO chain shared by every problem; specs inject the varying parts."""
+    return (
+        PPOConfig()
+        .environment(
+            env=env_cls,
+            env_config=env_config,
+        )
+        .env_runners(
+            num_env_runners=args.num_env_runners,
+            observation_filter=args.observation_filter,
+        )
+        .training(
+            train_batch_size_per_learner=args.train_batch_size_per_learner,
+            num_epochs=args.num_epochs,
+            minibatch_size=args.minibatch_size,
+            lr=args.lr * num_learners,
+            entropy_coeff=args.entropy_coeff,  # type: ignore[arg-type]
+            grad_clip=args.grad_clip,
+            vf_loss_coeff=args.vf_loss_coeff,
+            vf_clip_param=20.0,
+        )
+        .learners(
+            num_learners=num_learners,
+            num_gpus_per_learner=num_gpus_per_learner,
+        )
+        .callbacks(
+            callbacks_class=callbacks_class,
+        )
+        .evaluation(
+            evaluation_interval=args.evaluation_interval,
+            evaluation_num_env_runners=args.evaluation_num_env_runners,
+            evaluation_duration=1,
+            evaluation_duration_unit="episodes",
+            custom_evaluation_function=custom_evaluation_function,
+            evaluation_config={"explore": False},
+        )
+    )
