@@ -43,3 +43,6 @@ class HardnessMetricsCallback(DefaultCallbacks):
         metrics_logger.log_value(
             "success_rate_650", 1.0 if is_success else 0.0, reduce="mean"
         )
+        metrics_logger.log_value(
+            "success_rate", 1.0 if is_success else 0.0, reduce="mean"
+        )
