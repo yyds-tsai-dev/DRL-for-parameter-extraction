@@ -5,6 +5,7 @@ from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from env.eehemt_env import EEHEMTEnv_Measure_VDS
+from env.objectives import NRMSEMinimizeObjective
 from evaluation.iv_curve_evaluation import evaluate_and_plot_iv_curve
 from utils.callbacks import TrainingMetricsCallback
 
@@ -100,6 +101,6 @@ def build_ppo_config(
 def build_checkpoint_config() -> tune.CheckpointConfig:
     return tune.CheckpointConfig(
         num_to_keep=5,
-        checkpoint_score_attribute="env_runners/min_nrmse",
-        checkpoint_score_order="min",
+        checkpoint_score_attribute=NRMSEMinimizeObjective.RANKED_METRIC,
+        checkpoint_score_order=NRMSEMinimizeObjective.RANKED_ORDER,
     )

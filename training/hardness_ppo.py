@@ -5,6 +5,7 @@ from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from env.material_hardness_env import MaterialHardnessEnv
+from env.objectives import ThresholdMaximizeObjective
 from evaluation.hardness_evaluation import evaluate_and_save_hardness
 from utils.hardness_callbacks import HardnessMetricsCallback
 
@@ -81,6 +82,6 @@ def build_ppo_config(
 def build_checkpoint_config() -> tune.CheckpointConfig:
     return tune.CheckpointConfig(
         num_to_keep=5,
-        checkpoint_score_attribute="env_runners/max_predicted_hardness",
-        checkpoint_score_order="max",
+        checkpoint_score_attribute=ThresholdMaximizeObjective.RANKED_METRIC,
+        checkpoint_score_order=ThresholdMaximizeObjective.RANKED_ORDER,
     )
