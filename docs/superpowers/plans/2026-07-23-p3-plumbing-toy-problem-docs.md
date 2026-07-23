@@ -1,6 +1,6 @@
 # P3: Shared Eval Plumbing + Toy-Problem Acceptance + User Docs — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deduplicate the RLlib evaluation plumbing that both custom eval functions copy, add the threshold-agnostic `success_rate` metric, prove the extension model with an in-test toy problem registered with zero shared-file edits, and document how a future user adds a problem.
 
@@ -32,7 +32,7 @@
 - Produces: `evaluation.rllib_plumbing` exporting `as_episode_list`, `episode_env_steps`, `episode_agent_steps`, `remote_eval_worker_ids`, `foreach_one_eval_runner`, `sample_one_eval_runner`.
 - NOT extracted (stays per-file, differing semantics): `_episode_final_info`, `_next_evaluation_index` (different attr names), output-dir helpers, artifact writers, plot collectors.
 
-- [ ] **Step 1: Create `evaluation/rllib_plumbing.py`**
+- [x] **Step 1: Create `evaluation/rllib_plumbing.py`**
 
 ```python
 """RLlib new-API-stack evaluation plumbing shared by all problems' eval hooks.
@@ -104,7 +104,7 @@ def sample_one_eval_runner(eval_workers: Any) -> list[Any]:
     return foreach_one_eval_runner(eval_workers, sample_and_get_metrics)
 ```
 
-- [ ] **Step 2: Facade the helpers in `evaluation/hardness_evaluation.py`**
+- [x] **Step 2: Facade the helpers in `evaluation/hardness_evaluation.py`**
 
 Delete the six local definitions (`_as_episode_list`, `_episode_env_steps`, `_episode_agent_steps`, `_remote_eval_worker_ids`, `_foreach_one_eval_runner`, `_sample_one_eval_runner`) and add, after the existing `from ray.rllib.utils.metrics import ...` import:
 
@@ -121,16 +121,16 @@ from evaluation.rllib_plumbing import (
 
 `_episode_final_info`, `_next_evaluation_index`, `_training_iteration`, `_success_rate_from_info`, the artifact writer, and `evaluate_and_save_hardness` stay untouched. (`_foreach_one_eval_runner` and `_remote_eval_worker_ids` keep working for any test that imports them by their private names.)
 
-- [ ] **Step 3: Facade the helpers in `evaluation/iv_curve_evaluation.py`**
+- [x] **Step 3: Facade the helpers in `evaluation/iv_curve_evaluation.py`**
 
 Delete the same six local definitions there and add the identical import block (after `from ray.rllib.utils.metrics import ...`). `_episode_final_info`, `_unwrap_env`, `_static_plot_data_from_env_runner`, `_collect_static_plot_data`, `_plot_dir`, `_next_evaluation_index`, and `evaluate_and_plot_iv_curve` stay untouched. NOTE: the iv variant of `_foreach_one_eval_runner` called `eval_workers.foreach_env_runner` directly while the extracted version uses `getattr(...)` first — semantically identical (the attribute is always present on real and fake worker groups; the hardness variant already shipped the getattr form).
 
-- [ ] **Step 4: Run the three eval test files**
+- [x] **Step 4: Run the three eval test files**
 
 Run: `uv run pytest tests/test_hardness_evaluation.py tests/test_iv_curve_evaluation.py tests/test_plot_evaluation_curves.py -v`
 Expected: ALL PASS unmodified. If any test imports a deleted private name and fails at collection, the facade import block above restores that exact name — re-check spelling rather than editing tests. If a test asserts semantics the extraction changed, STOP and report BLOCKED with the failing output.
 
-- [ ] **Step 5: Full trio, commit**
+- [x] **Step 5: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `129 passed`; ruff clean; mypy exit 0.
@@ -151,7 +151,7 @@ git commit -m "refactor: extract shared RLlib eval plumbing helpers" -m "Co-Auth
 **Interfaces:**
 - Produces: `HardnessMetricsCallback` logs `success_rate` (mean-reduced 0/1) in addition to the legacy `success_rate_650`.
 
-- [ ] **Step 1: Append the failing test to `tests/test_hardness_callbacks.py`**
+- [x] **Step 1: Append the failing test to `tests/test_hardness_callbacks.py`**
 
 The file already defines `FakeMetricsLogger` (records `values[key] = (value, reduce)`) and `FakeEpisode(infos)` — reuse them. Append exactly:
 
@@ -183,12 +183,12 @@ def test_hardness_callback_logs_threshold_agnostic_success_rate():
     assert metrics_logger.values["success_rate_650"] == (1.0, "mean")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `uv run pytest tests/test_hardness_callbacks.py -v`
 Expected: the new test FAILS (`success_rate` never logged); the existing 2 tests still pass.
 
-- [ ] **Step 3: Add the metric in `utils/hardness_callbacks.py`**
+- [x] **Step 3: Add the metric in `utils/hardness_callbacks.py`**
 
 Directly after the existing `success_rate_650` log call, add:
 
@@ -200,7 +200,7 @@ Directly after the existing `success_rate_650` log call, add:
 
 (`success_rate_650` stays — dashboard continuity per ADR 0003.)
 
-- [ ] **Step 4: Run to verify green, full trio, commit**
+- [x] **Step 4: Run to verify green, full trio, commit**
 
 Run: `uv run pytest tests/test_hardness_callbacks.py -v` → all pass.
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
@@ -222,7 +222,7 @@ git commit -m "feat: log threshold-agnostic success_rate alongside legacy metric
 **Interfaces:**
 - Consumes: `problems.registry` (P1), `training.ppo_common.build_base_ppo_config` (P1), `env.backends.PredictionResult` (P2), `env.objectives.ThresholdMaximizeObjective` (P2), `train_ppo.build_arg_parser`/`select_training_module`.
 
-- [ ] **Step 1: Create `tests/test_toy_problem_extension.py`**
+- [x] **Step 1: Create `tests/test_toy_problem_extension.py`**
 
 ```python
 """Acceptance proof for the pluggable-problem architecture (ADR 0003).
@@ -413,17 +413,17 @@ def test_toy_env_episode_uses_backend_and_objective(toy_registered):
     assert terminated is True and truncated is False
 ```
 
-- [ ] **Step 2: Run the new tests**
+- [x] **Step 2: Run the new tests**
 
 Run: `uv run pytest tests/test_toy_problem_extension.py -v`
 Expected: 3 PASS. If `build_arg_parser` rejects `toy_strength`, the registry wiring regressed — STOP and report BLOCKED (do not modify shared files to make it pass; that would defeat the acceptance proof).
 
-- [ ] **Step 3: Prove zero shared-file edits**
+- [x] **Step 3: Prove zero shared-file edits**
 
 Run: `git status --short`
 Expected: only `?? tests/test_toy_problem_extension.py` (plus the standing `?? .claude/`, `?? CLAUDE.md`). Paste the output in your report.
 
-- [ ] **Step 4: Full trio, commit**
+- [x] **Step 4: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `133 passed`; ruff clean; mypy exit 0.
@@ -441,7 +441,7 @@ git commit -m "test: prove third-problem registration needs zero shared-file edi
 - Create: `docs/how-to-add-a-problem.md`
 - Modify: `CONTEXT.md` (append three terms to the Language section, before Example Dialogue)
 
-- [ ] **Step 1: Create `docs/how-to-add-a-problem.md`**
+- [x] **Step 1: Create `docs/how-to-add-a-problem.md`**
 
 ```markdown
 # How to add a new optimization problem
@@ -478,7 +478,7 @@ executable specification of this contract is
    num_gpus_per_learner)` (delegate to
    `training.ppo_common.build_base_ppo_config`), `build_checkpoint_config()`,
    and a `<NAME>_WANDB_PROJECT` constant. `training/hardness_ppo.py` is the
-   reference implementation (~110 lines).
+   reference implementation (~90 lines).
 5. **Registration** — build a `ProblemSpec` and call
    `problems.registry.register(spec)` (see `problems/hardness.py`). Source
    `checkpoint_metric`/`checkpoint_order` from your objective class so the
@@ -486,16 +486,16 @@ executable specification of this contract is
 
 ## Checklist
 
-- [ ] Backend implements the protocol; committee ZIPs go in `env/<problem>/`,
+- [x] Backend implements the protocol; committee ZIPs go in `env/<problem>/`,
       input data in `data/<problem>/` (both git-ignored; add `PUT_*_HERE.txt`
       placeholders).
-- [ ] Env-var defaults for your hyperparameters follow the existing pattern
+- [x] Env-var defaults for your hyperparameters follow the existing pattern
       (`os.getenv` fallbacks in `add_env_args`); document them in `.env`.
-- [ ] Tests stub the backend through your injection seam (no model artifact
+- [x] Tests stub the backend through your injection seam (no model artifact
       or GPU needed — see `tests/conftest.py` and the existing env tests).
-- [ ] `uv run pytest && uv run ruff check . && uv run mypy .` all green
+- [x] `uv run pytest && uv run ruff check . && uv run mypy .` all green
       (always via `uv run`; the global mypy lacks venv packages).
-- [ ] New layer-boundary decisions recorded in `docs/adr/` and
+- [x] New layer-boundary decisions recorded in `docs/adr/` and
       `.codebase-memory/adr.md`.
 
 ## Worked example
@@ -508,7 +508,7 @@ shape, swap in your real backend/env, move the module under `problems/`, and
 register it from `problems/__init__.py`.
 ```
 
-- [ ] **Step 2: Append three terms to CONTEXT.md**
+- [x] **Step 2: Append three terms to CONTEXT.md**
 
 Insert before the `## Example Dialogue` heading, matching the existing term format exactly:
 
@@ -526,7 +526,7 @@ The registration record that binds one optimization problem's environment, train
 _Avoid_: env entry, config block
 ```
 
-- [ ] **Step 3: Full trio, commit**
+- [x] **Step 3: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `133 passed`; ruff clean; mypy exit 0.
@@ -543,7 +543,7 @@ git commit -m "docs: add problem-extension guide and ubiquitous-language terms" 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-23-p3-plumbing-toy-problem-docs.md` (tick checkboxes)
 
-- [ ] **Step 1: Full verification trio**
+- [x] **Step 1: Full verification trio**
 
 ```bash
 uv run pytest && uv run ruff check . && uv run mypy .
@@ -551,11 +551,11 @@ uv run pytest && uv run ruff check . && uv run mypy .
 
 Expected: `133 passed`, ruff clean, mypy exit 0.
 
-- [ ] **Step 2: Confirm untracked hygiene**
+- [x] **Step 2: Confirm untracked hygiene**
 
 `git status --short` shows only `?? .claude/` and `?? CLAUDE.md`.
 
-- [ ] **Step 3: Tick all checkboxes in this plan and commit**
+- [x] **Step 3: Tick all checkboxes in this plan and commit**
 
 ```bash
 git add docs/superpowers/plans/2026-07-23-p3-plumbing-toy-problem-docs.md

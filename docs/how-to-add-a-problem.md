@@ -32,7 +32,7 @@ executable specification of this contract is
    num_gpus_per_learner)` (delegate to
    `training.ppo_common.build_base_ppo_config`), `build_checkpoint_config()`,
    and a `<NAME>_WANDB_PROJECT` constant. `training/hardness_ppo.py` is the
-   reference implementation (~110 lines).
+   reference implementation (~90 lines).
 5. **Registration** — build a `ProblemSpec` and call
    `problems.registry.register(spec)` (see `problems/hardness.py`). Source
    `checkpoint_metric`/`checkpoint_order` from your objective class so the
