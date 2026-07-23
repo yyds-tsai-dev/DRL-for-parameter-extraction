@@ -1,4 +1,3 @@
-import shutil
 import os
 import zipfile
 import io
@@ -127,7 +126,6 @@ def apply_package_feature_encoding(df, metadata):
     preprocessing = metadata.get("preprocessing", {})
     encoding = preprocessing.get("categorical_encoding") or {}
     model_features = metadata.get("features", {}).get("model_features") or []
-    original_features = metadata.get("features", {}).get("original_features") or model_features
     categorical_features = encoding.get("categorical_features") or []
     method = encoding.get("method")
 
