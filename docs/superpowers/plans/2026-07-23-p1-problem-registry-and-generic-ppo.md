@@ -38,7 +38,7 @@
 
 Background: `mypy.ini` uses inline comments after boolean values; mypy's ini parser rejects them (`Not a boolean: True`), so every such option has silently been OFF. `utils/` has no `__init__.py`, so mypy sees `utils/dim_reduce.py` under two module names. ruff's top-level `ignore` key is deprecated, and there are 7 outstanding lint errors (all pre-existing on main). ruff and mypy are not project deps, so `uv sync` removes them from the venv.
 
-- [ ] **Step 1: Add ruff and mypy to the dev dependency group**
+- [x] **Step 1: Add ruff and mypy to the dev dependency group**
 
 ```bash
 uv add --dev ruff mypy
@@ -46,7 +46,7 @@ uv add --dev ruff mypy
 
 Expected: `pyproject.toml` `[dependency-groups] dev` gains `ruff` and `mypy` entries; `uv.lock` updated; both tools now run via `uv run`.
 
-- [ ] **Step 2: Rewrite mypy.ini with comments on their own lines**
+- [x] **Step 2: Rewrite mypy.ini with comments on their own lines**
 
 Replace the entire content of `mypy.ini` with:
 
@@ -78,7 +78,7 @@ disable_error_code = arg-type
 exclude = ^(tests/|logs/)
 ```
 
-- [ ] **Step 3: Create `utils/__init__.py`**
+- [x] **Step 3: Create `utils/__init__.py`**
 
 Create the file with exactly this content (empty module docstring keeps ruff quiet):
 
@@ -86,7 +86,7 @@ Create the file with exactly this content (empty module docstring keeps ruff qui
 """Utility helpers shared across the training harness."""
 ```
 
-- [ ] **Step 4: Migrate ruff config and add per-file ignores**
+- [x] **Step 4: Migrate ruff config and add per-file ignores**
 
 In `pyproject.toml`, replace:
 
@@ -112,16 +112,16 @@ ignore = ["PTH"]
 
 (The `sys.path.insert` before `from env import InferenceModel` in `scripts/run_model_inference.py` is intentional, as are the notebook reload imports — per-file ignores, not code changes.)
 
-- [ ] **Step 5: Fix the two real lint errors in `env/file_process.py`**
+- [x] **Step 5: Fix the two real lint errors in `env/file_process.py`**
 
 Remove line 1 (`import shutil` — F401 unused). Remove line 130 (`original_features = metadata.get("features", {}).get("original_features") or model_features` — F841 assigned but never used; it is a pure read with no side effects).
 
-- [ ] **Step 6: Run ruff and confirm clean**
+- [x] **Step 6: Run ruff and confirm clean**
 
 Run: `uv run ruff check .`
 Expected: `All checks passed!` and NO deprecation warning about top-level `ignore`.
 
-- [ ] **Step 7: Run mypy; apply the fallback rule if needed**
+- [x] **Step 7: Run mypy; apply the fallback rule if needed**
 
 Run: `uv run mypy .`
 
@@ -147,12 +147,12 @@ exclude = ^(tests/|logs/)
 
 Re-run `uv run mypy .`; it must exit 0. In your task report, list which flags were dropped and paste the error inventory that forced the fallback (it becomes future cleanup input).
 
-- [ ] **Step 8: Run the full test suite**
+- [x] **Step 8: Run the full test suite**
 
 Run: `uv run pytest`
 Expected: `92 passed`
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add mypy.ini pyproject.toml uv.lock env/file_process.py utils/__init__.py
@@ -173,7 +173,7 @@ git commit -m "chore: repair mypy/ruff configs and adopt tools as dev deps" -m "
 
 Existing tests already lock: default env `hardness`, `select_training_module` returning modules with the W&B constants, checkpoint metric strings, and full PPO wiring. Two gaps remain: rejection of unknown env names at the CLI, and the `NoFilter` default when the env var is unset.
 
-- [ ] **Step 1: Append to `tests/test_train_ppo_config.py`**
+- [x] **Step 1: Append to `tests/test_train_ppo_config.py`**
 
 ```python
 def test_build_arg_parser_rejects_unknown_env():
@@ -183,7 +183,7 @@ def test_build_arg_parser_rejects_unknown_env():
 
 (`build_arg_parser`'s pre-parser declares `choices`; argparse exits with an error for an unknown value. `pytest` is already imported in this file.)
 
-- [ ] **Step 2: Append to `tests/test_ppo_common.py`**
+- [x] **Step 2: Append to `tests/test_ppo_common.py`**
 
 ```python
 def test_common_parser_observation_filter_defaults_to_nofilter(monkeypatch):
@@ -195,17 +195,17 @@ def test_common_parser_observation_filter_defaults_to_nofilter(monkeypatch):
     assert args.observation_filter == "NoFilter"
 ```
 
-- [ ] **Step 3: Run the new tests**
+- [x] **Step 3: Run the new tests**
 
 Run: `uv run pytest tests/test_train_ppo_config.py::test_build_arg_parser_rejects_unknown_env tests/test_ppo_common.py::test_common_parser_observation_filter_defaults_to_nofilter -v`
 Expected: both PASS (they characterize current behavior; if either fails, STOP and report — the assumption inventory is wrong).
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `uv run pytest`
 Expected: `94 passed`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/test_train_ppo_config.py tests/test_ppo_common.py
@@ -228,7 +228,7 @@ git commit -m "test: characterize env dispatch rejection and NoFilter default" -
   - `names() -> list[str]` — sorted registered names.
   - `clear() -> None` — test-only helper to reset state.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_problem_registry.py`:
 
@@ -298,12 +298,12 @@ def test_spec_is_immutable():
         spec.name = "other"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_problem_registry.py -v`
 Expected: FAIL at collection with `ModuleNotFoundError: No module named 'problems'`
 
-- [ ] **Step 3: Write `problems/registry.py`**
+- [x] **Step 3: Write `problems/registry.py`**
 
 ```python
 """Problem registry: maps ``--env`` names to their training assembly parts.
@@ -374,12 +374,12 @@ Also create an EMPTY `problems/__init__.py` for now (Task 4 fills it):
 ```python
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_problem_registry.py -v`
 Expected: 5 PASS
 
-- [ ] **Step 5: Full suite, lint, commit**
+- [x] **Step 5: Full suite, lint, commit**
 
 Run: `uv run pytest && uv run ruff check .`
 Expected: `99 passed`; ruff clean.
@@ -403,7 +403,7 @@ git commit -m "feat: add problem registry with immutable ProblemSpec" -m "Co-Aut
 - Consumes: `problems.registry` (Task 3); `training.hardness_ppo`, `training.eehemt_ppo` (existing modules).
 - Produces: `import problems` self-registers specs named `"hardness"` and `"eehemt"` whose callables ARE the existing module functions (identity, not copies).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_problem_builtin_specs.py`:
 
@@ -443,12 +443,12 @@ def test_eehemt_spec_points_at_existing_module_parts():
     assert spec.build_checkpoint_config is eehemt_ppo.build_checkpoint_config
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_problem_builtin_specs.py -v`
 Expected: FAIL — `registry.names() == []` (nothing registered yet).
 
-- [ ] **Step 3: Write the two spec modules and the package init**
+- [x] **Step 3: Write the two spec modules and the package init**
 
 `problems/hardness.py`:
 
@@ -515,12 +515,12 @@ for _builder in (hardness.build_spec, eehemt.build_spec):
 del _builder, _spec
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_problem_builtin_specs.py -v`
 Expected: 3 PASS
 
-- [ ] **Step 5: Full suite, lint, commit**
+- [x] **Step 5: Full suite, lint, commit**
 
 Run: `uv run pytest && uv run ruff check .`
 Expected: `102 passed`; ruff clean. (The registry-isolation fixture in `tests/test_problem_registry.py` restores builtin registrations via snapshot/restore, so ordering between test files cannot leak.)
@@ -543,7 +543,7 @@ git commit -m "feat: self-register builtin hardness and eehemt problems" -m "Co-
 - Consumes: `problems.registry.get/names` (Tasks 3–4).
 - Produces: `select_training_module(env_name) -> ModuleType` (unchanged signature — now a registry facade); `_wandb_project_name(env_name, training_module) -> str` (unchanged signature, module arg now unused but kept for call-site stability).
 
-- [ ] **Step 1: Edit `train_ppo.py`**
+- [x] **Step 1: Edit `train_ppo.py`**
 
 Add to the imports block (after `from ray.rllib.algorithms.ppo import PPO`):
 
@@ -578,7 +578,7 @@ def _wandb_project_name(env_name: str, training_module: ModuleType) -> str:
     return problem_registry.get(env_name).wandb_project
 ```
 
-- [ ] **Step 2: Edit `training/ppo_common.py`**
+- [x] **Step 2: Edit `training/ppo_common.py`**
 
 Add import at the top (after `from ray.air.integrations.wandb import WandbLoggerCallback`):
 
@@ -596,17 +596,17 @@ Replace line 10 with:
 
 (Import-cycle check, verified: `problems` imports `training.hardness_ppo`/`training.eehemt_ppo`, which import env/evaluation/utils modules — none of which import `training.ppo_common`. `training/__init__.py` is a bare package marker.)
 
-- [ ] **Step 3: Run the dispatch-related tests**
+- [x] **Step 3: Run the dispatch-related tests**
 
 Run: `uv run pytest tests/test_train_ppo_config.py tests/test_ppo_common.py tests/test_problem_registry.py tests/test_problem_builtin_specs.py -v`
 Expected: ALL PASS — especially `test_select_training_module_dispatches_by_env`, `test_train_ppo_defaults_to_hardness_env`, `test_build_arg_parser_rejects_unknown_env`, `test_common_parser_env_defaults_to_hardness_and_can_select_eehemt`.
 
-- [ ] **Step 4: Full suite, lint, mypy**
+- [x] **Step 4: Full suite, lint, mypy**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `102 passed`; ruff clean; mypy exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add train_ppo.py training/ppo_common.py
@@ -640,7 +640,7 @@ def build_base_ppo_config(
 ) -> PPOConfig
 ```
 
-- [ ] **Step 1: Add `build_base_ppo_config` to `training/ppo_common.py`**
+- [x] **Step 1: Add `build_base_ppo_config` to `training/ppo_common.py`**
 
 Add imports at the top:
 
@@ -700,7 +700,7 @@ def build_base_ppo_config(
     )
 ```
 
-- [ ] **Step 2: Make `training/hardness_ppo.py::build_ppo_config` delegate**
+- [x] **Step 2: Make `training/hardness_ppo.py::build_ppo_config` delegate**
 
 IMPORTANT: the `build_base_ppo_config` import must be FUNCTION-LOCAL, not module-top. Reason (verified): after Task 5, `training/ppo_common.py` imports `problems` at module top, and `problems` imports `training.hardness_ppo` — a top-level import of `ppo_common` from `hardness_ppo` would close an import cycle during partial initialization.
 
@@ -726,7 +726,7 @@ def build_ppo_config(
     )
 ```
 
-- [ ] **Step 3: Make `training/eehemt_ppo.py::build_ppo_config` delegate**
+- [x] **Step 3: Make `training/eehemt_ppo.py::build_ppo_config` delegate**
 
 Replace the function body the same way:
 
@@ -750,17 +750,17 @@ def build_ppo_config(
     )
 ```
 
-- [ ] **Step 4: Run the two wiring tests (field-by-field identity proof)**
+- [x] **Step 4: Run the two wiring tests (field-by-field identity proof)**
 
 Run: `uv run pytest tests/test_train_ppo_config.py -v`
 Expected: ALL PASS, including both `*_wires_callbacks_*` tests asserting every config field (env class, callback class, eval fn, all numeric fields, `vf_clip_param == 20.0`).
 
-- [ ] **Step 5: Full suite, lint, mypy**
+- [x] **Step 5: Full suite, lint, mypy**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `102 passed`; ruff clean; mypy exit 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add training/ppo_common.py training/hardness_ppo.py training/eehemt_ppo.py
@@ -774,7 +774,7 @@ git commit -m "refactor: extract shared PPO assembly into build_base_ppo_config"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-23-p1-problem-registry-and-generic-ppo.md` (tick checkboxes)
 
-- [ ] **Step 1: Full verification trio from a clean state**
+- [x] **Step 1: Full verification trio from a clean state**
 
 ```bash
 uv run pytest && uv run ruff check . && uv run mypy .
@@ -782,7 +782,7 @@ uv run pytest && uv run ruff check . && uv run mypy .
 
 Expected: `102 passed`, ruff clean, mypy exit 0.
 
-- [ ] **Step 2: Confirm no forbidden files were touched**
+- [x] **Step 2: Confirm no forbidden files were touched**
 
 ```bash
 git log --stat main..HEAD -- env/material_hardness_env.py env/eehemt_env.py utils/callbacks.py utils/hardness_callbacks.py evaluation/
@@ -790,7 +790,7 @@ git log --stat main..HEAD -- env/material_hardness_env.py env/eehemt_env.py util
 
 Expected: empty output (later plans own those files). `.claude/` and `CLAUDE.md` still untracked (`git status --short` shows them under `??`).
 
-- [ ] **Step 3: Tick all checkboxes in this plan and commit**
+- [x] **Step 3: Tick all checkboxes in this plan and commit**
 
 ```bash
 git add docs/superpowers/plans/2026-07-23-p1-problem-registry-and-generic-ppo.md
