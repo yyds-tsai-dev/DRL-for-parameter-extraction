@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -36,7 +38,7 @@ class FakeTwoTargetModel(FakeArrayModel):
 def test_prediction_result_is_immutable():
     result = PredictionResult(values={"hardness": 1.0}, uncertainties={})
 
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         result.values = {}
 
 

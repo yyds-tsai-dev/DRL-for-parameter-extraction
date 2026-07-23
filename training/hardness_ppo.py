@@ -7,6 +7,7 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from env.material_hardness_env import MaterialHardnessEnv
 from env.objectives import ThresholdMaximizeObjective
 from evaluation.hardness_evaluation import evaluate_and_save_hardness
+from training.ppo_common import build_base_ppo_config
 from utils.hardness_callbacks import HardnessMetricsCallback
 
 HARDNESS_WANDB_PROJECT = "PPO_for_material_hardness_optimization"
@@ -66,8 +67,6 @@ def build_ppo_config(
     num_learners: int,
     num_gpus_per_learner: float,
 ) -> PPOConfig:
-    from training.ppo_common import build_base_ppo_config
-
     return build_base_ppo_config(
         args,
         num_learners=num_learners,

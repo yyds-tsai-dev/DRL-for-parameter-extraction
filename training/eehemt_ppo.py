@@ -7,6 +7,7 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from env.eehemt_env import EEHEMTEnv_Measure_VDS
 from env.objectives import NRMSEMinimizeObjective
 from evaluation.iv_curve_evaluation import evaluate_and_plot_iv_curve
+from training.ppo_common import build_base_ppo_config
 from utils.callbacks import TrainingMetricsCallback
 
 EEHEMT_WANDB_PROJECT = "PPO_for_multi_I-V_curves_fitting_in_EEHEMT"
@@ -85,8 +86,6 @@ def build_ppo_config(
     num_learners: int,
     num_gpus_per_learner: float,
 ) -> PPOConfig:
-    from training.ppo_common import build_base_ppo_config
-
     return build_base_ppo_config(
         args,
         num_learners=num_learners,

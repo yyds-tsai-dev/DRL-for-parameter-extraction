@@ -16,7 +16,10 @@ from typing import Protocol, runtime_checkable
 
 @dataclass(frozen=True)
 class PredictionResult:
-    """Per-target predictions and diagnostic uncertainties for one candidate."""
+    """Per-target predictions and diagnostic uncertainties for one candidate.
+
+    Frozen at the dataclass level; the inner dicts are not deep-frozen.
+    """
 
     values: dict[str, float]
     uncertainties: dict[str, float]
@@ -24,6 +27,8 @@ class PredictionResult:
 
 @runtime_checkable
 class PredictionBackend(Protocol):
+    """Structural contract; runtime isinstance checks verify method presence only."""
+
     def predict(self, features: Mapping[str, float]) -> PredictionResult: ...
 
     def close(self) -> None: ...

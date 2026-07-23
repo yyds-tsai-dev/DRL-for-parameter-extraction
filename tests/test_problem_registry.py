@@ -1,3 +1,4 @@
+import dataclasses
 import types
 
 import pytest
@@ -59,5 +60,5 @@ def test_names_are_sorted():
 def test_spec_is_immutable():
     spec = _dummy_spec()
 
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         spec.name = "other"

@@ -5,10 +5,11 @@ import torch as th
 from ray.air.integrations.wandb import WandbLoggerCallback
 from ray.rllib.algorithms.ppo import PPOConfig
 
-from problems import registry as problem_registry
-
-
 def build_common_arg_parser(current_dir):
+    # Imported here, not at module top: problems imports the training modules,
+    # and a module-level import would create a cycle (see ADR 0003).
+    from problems import registry as problem_registry
+
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "--env", choices=problem_registry.names(), default="hardness"

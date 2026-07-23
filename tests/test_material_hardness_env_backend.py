@@ -131,6 +131,24 @@ def test_backend_missing_target_raises_missing_column_keyerror():
         env.step(np.zeros(6, dtype=np.float32))
 
 
+def test_backend_missing_uncertainty_defaults_to_zero_in_failure_path():
+    class NanNoUncertaintyBackend(FakeBackend):
+        def predict(self, features):
+            self.features_seen.append(dict(features))
+            return PredictionResult(
+                values={"hardness": float("nan")}, uncertainties={}
+            )
+
+    env = make_backend_env(NanNoUncertaintyBackend)
+    env.reset(seed=7)
+
+    _, reward, terminated, truncated, info = env.step(np.zeros(6, dtype=np.float32))
+
+    assert reward == -3.0
+    assert terminated is True
+    assert info["uncertainty_hardness"] == 0.0
+
+
 def test_backend_close_forwards():
     env = make_backend_env()
 
