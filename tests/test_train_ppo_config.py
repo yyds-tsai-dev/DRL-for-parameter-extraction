@@ -224,3 +224,8 @@ def test_wandb_project_constants_are_environment_specific():
         eehemt_ppo.EEHEMT_WANDB_PROJECT
         == "PPO_for_multi_I-V_curves_fitting_in_EEHEMT"
     )
+
+
+def test_build_arg_parser_rejects_unknown_env():
+    with pytest.raises(SystemExit):
+        build_arg_parser("/project", ["--env", "nosuch"])
