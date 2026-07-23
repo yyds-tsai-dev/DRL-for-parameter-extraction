@@ -104,8 +104,16 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             f"==== IR Drop: Rs_ext={self.Rs_ext} Ω, Rd_ext={self.Rd_ext} Ω, "
             f"n_iter={self.ir_drop_n_iter}, maxfev={self.ir_drop_maxfev} ===="
         )
-        self.simulator = EEHEMTSimulator.from_va_file(
-            self.va_file_path,
+        simulator_factory = config.get("simulator_factory")
+        if simulator_factory is None:
+
+            def simulator_factory(**kwargs):
+                return EEHEMTSimulator.from_va_file(
+                    kwargs.pop("va_file_path"), **kwargs
+                )
+
+        self.simulator = simulator_factory(
+            va_file_path=self.va_file_path,
             temperature=TEMPERATURE,
             rs_ext=self.Rs_ext,
             rd_ext=self.Rd_ext,
