@@ -17,7 +17,7 @@ class FakeArrayModel:
 
     def predict_array(self, input_data):
         self.calls.append(input_data)
-        return np.array([[720.0]]), np.array([[12.5]]), None, None
+        return np.array([[720.0]]), np.array([[12.5]])
 
     def close(self):
         self.closed = True
@@ -30,7 +30,7 @@ class FakeTwoTargetModel(FakeArrayModel):
 
     def predict_array(self, input_data):
         self.calls.append(input_data)
-        return np.array([[700.0, 7.9]]), np.array([[10.0, 0.2]]), None, None
+        return np.array([[700.0, 7.9]]), np.array([[10.0, 0.2]])
 
 
 def test_prediction_result_is_immutable():
@@ -76,7 +76,7 @@ def test_committee_backend_supports_multiple_targets():
 def test_committee_backend_propagates_non_finite_values():
     class NonFiniteModel(FakeArrayModel):
         def predict_array(self, input_data):
-            return np.array([[np.nan]]), np.array([[np.inf]]), None, None
+            return np.array([[np.nan]]), np.array([[np.inf]])
 
     backend = CommitteePackageBackend(
         "/tmp/fake.zip", inference_model_cls=NonFiniteModel
