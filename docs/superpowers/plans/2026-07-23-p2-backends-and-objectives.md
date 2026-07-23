@@ -35,7 +35,7 @@
   - `PredictionBackend` Protocol: `predict(features: Mapping[str, float]) -> PredictionResult`; `close() -> None`.
   - `CommitteePackageBackend(model_package_path, *, inference_model_cls=None)` — wraps `env.InferenceModel` (or the injected class), builds results from `predict_array` + `targets`; exposes `.targets`; `close()` forwards.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_backends.py`:
 
@@ -141,12 +141,12 @@ def test_committee_backend_close_forwards_and_satisfies_protocol():
     assert isinstance(backend, PredictionBackend)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_backends.py -v`
 Expected: FAIL at collection with `ModuleNotFoundError: No module named 'env.backends'`
 
-- [ ] **Step 3: Write `env/backends.py`**
+- [x] **Step 3: Write `env/backends.py`**
 
 ```python
 """Typed prediction-backend contract shared by all optimization problems.
@@ -213,12 +213,12 @@ class CommitteePackageBackend:
             close()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_backends.py -v`
 Expected: 6 PASS
 
-- [ ] **Step 5: Full trio, commit**
+- [x] **Step 5: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `108 passed`; ruff clean; mypy exit 0.
@@ -247,7 +247,7 @@ Design: `step()` keeps its exact current structure. The two prediction touchpoin
 
 `step()`'s hardcoded `"Predicted hardness"` / `"Uncertainty hardness"` literals become `f"Predicted {self.target_name}"` / `f"Uncertainty {self.target_name}"` (identical strings for the default `target_name="hardness"`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_material_hardness_env_backend.py`:
 
@@ -393,12 +393,12 @@ def test_backend_close_forwards():
     assert env.model.closed is True
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_material_hardness_env_backend.py -v`
 Expected: FAIL — `MaterialHardnessEnv` ignores `prediction_backend_cls`, so `__init__` calls `FakeBackend(...)`? No: with no `inference_model_cls`, `__init__` imports the real `InferenceModel` and raises `FileNotFoundError: Model package not found: /tmp/fake.zip`. That collection-free failure IS the expected RED.
 
-- [ ] **Step 3: Modify `env/material_hardness_env.py`**
+- [x] **Step 3: Modify `env/material_hardness_env.py`**
 
 Add the import (after `from utils.composition_projection import project_bounded_simplex`):
 
@@ -468,12 +468,12 @@ Add the two indirection methods (place them directly above the existing `_read_p
         return self._read_prediction_value(prediction, column_name, default)
 ```
 
-- [ ] **Step 4: Run the new tests and the untouched legacy tests**
+- [x] **Step 4: Run the new tests and the untouched legacy tests**
 
 Run: `uv run pytest tests/test_material_hardness_env_backend.py tests/test_material_hardness_env.py -v`
 Expected: 5 new PASS + all 13 existing PASS, zero modifications to `tests/test_material_hardness_env.py`.
 
-- [ ] **Step 5: Full trio, commit**
+- [x] **Step 5: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `113 passed`; ruff clean; mypy exit 0.
@@ -495,7 +495,7 @@ git commit -m "feat: accept injectable prediction backend in hardness env" -m "C
 **Interfaces:**
 - Produces: `EEHEMTEnv_Measure_VDS` accepts optional env-config key `simulator_factory` — a callable receiving exactly `(va_file_path, temperature, rs_ext, rd_ext, ir_drop_n_iter, ir_drop_maxfev)` as keyword arguments and returning a simulator object. Default `None` preserves today's `EEHEMTSimulator.from_va_file(...)` construction byte-for-byte.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_eehemt_simulator_seam.py`:
 
@@ -568,12 +568,12 @@ def test_simulator_factory_injects_fake_and_env_still_resets():
 
 (The fake never touches verilogae: a real `from_va_file` on the nonexistent `.va` path would crash, so a passing test proves the factory replaced construction.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_eehemt_simulator_seam.py -v`
 Expected: FAIL — config key ignored, env calls `EEHEMTSimulator.from_va_file("/nonexistent/never-compiled.va", ...)`, which errors (file not found / compile failure).
 
-- [ ] **Step 3: Modify `env/eehemt_env.py`**
+- [x] **Step 3: Modify `env/eehemt_env.py`**
 
 Replace the construction (currently lines 107–114):
 
@@ -609,12 +609,12 @@ with:
         )
 ```
 
-- [ ] **Step 4: Run the new test and the untouched EEHEMT suite**
+- [x] **Step 4: Run the new test and the untouched EEHEMT suite**
 
 Run: `uv run pytest tests/test_eehemt_simulator_seam.py tests/test_env_measure_vds.py -v`
 Expected: 1 new PASS + all 11 existing PASS unmodified.
 
-- [ ] **Step 5: Full trio, commit**
+- [x] **Step 5: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `114 passed`; ruff clean; mypy exit 0.
@@ -638,7 +638,7 @@ git commit -m "feat: add simulator_factory injection seam to EEHEMT env" -m "Co-
   - `ThresholdMaximizeObjective(threshold, scale, reward_min, reward_max)`; class attrs `RANKED_METRIC = "env_runners/max_predicted_hardness"`, `RANKED_ORDER = "max"`; method `evaluate(value: float) -> ThresholdOutcome`; ctor validation messages verbatim (`reward_scale must be positive`, `reward_min must be less than or equal to reward_max`).
   - `NRMSEMinimizeObjective(threshold, reward_min, reward_max, epsilon)`; class attrs `RANKED_METRIC = "env_runners/min_nrmse"`, `RANKED_ORDER = "min"`; methods `reward_from_nrmse(nrmse: float) -> float` and `is_success(nrmse: float) -> bool` (strict `<`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_objectives.py`:
 
@@ -746,12 +746,12 @@ def test_nrmse_objective_ranking_identity():
     assert NRMSEMinimizeObjective.RANKED_ORDER == "min"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_objectives.py -v`
 Expected: FAIL at collection with `ModuleNotFoundError: No module named 'env.objectives'`
 
-- [ ] **Step 3: Write `env/objectives.py`**
+- [x] **Step 3: Write `env/objectives.py`**
 
 ```python
 """Objective strategies: reward math, success comparison, and ranking identity.
@@ -836,12 +836,12 @@ class NRMSEMinimizeObjective:
         return bool(float(nrmse) < self.threshold)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_objectives.py -v`
 Expected: 13 PASS (threshold: 4 parametrized table cases + inclusive-at-threshold + validation + ranking identity = 7; NRMSE: 3 parametrized formula cases + clip-bounds + strict-success + ranking identity = 6).
 
-- [ ] **Step 5: Full trio, commit**
+- [x] **Step 5: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `127 passed`; ruff clean; mypy exit 0.
@@ -863,7 +863,7 @@ git commit -m "feat: add threshold-maximize and NRMSE-minimize objective strateg
 - Consumes: `ThresholdMaximizeObjective` (Task 4).
 - Produces: `MaterialHardnessEnv.objective` attribute (instance of `ThresholdMaximizeObjective`). Env attributes `hardness_threshold`, `reward_scale`, `reward_min`, `reward_max` remain (evaluation code reads them later).
 
-- [ ] **Step 1: Modify `__init__`**
+- [x] **Step 1: Modify `__init__`**
 
 Add the import:
 
@@ -884,7 +884,7 @@ Replace the two validation lines (currently `if self.reward_scale <= 0.0: raise 
 
 (The objective's constructor raises the same two `ValueError` messages at the same point in `__init__`, so `test_init_rejects_invalid_reward_config` passes unchanged.)
 
-- [ ] **Step 2: Delegate in `step()`**
+- [x] **Step 2: Delegate in `step()`**
 
 Replace the reward computation block (currently):
 
@@ -911,12 +911,12 @@ and replace `reward = float(np.clip(reward_unclipped, self.reward_min, self.rewa
 
 The non-finite failure path is untouched (it uses `self.reward_min`/`self.reward_scale`/`self.hardness_threshold` directly, which still exist).
 
-- [ ] **Step 3: Run the two hardness test files**
+- [x] **Step 3: Run the two hardness test files**
 
 Run: `uv run pytest tests/test_material_hardness_env.py tests/test_material_hardness_env_backend.py -v`
 Expected: ALL PASS unmodified — including the reward-table test, which is the numerical-identity gate.
 
-- [ ] **Step 4: Full trio, commit**
+- [x] **Step 4: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `127 passed`; ruff clean; mypy exit 0.
@@ -938,7 +938,7 @@ git commit -m "refactor: delegate hardness reward math to ThresholdMaximizeObjec
 - Consumes: `NRMSEMinimizeObjective` (Task 4).
 - Produces: `EEHEMTEnv_Measure_VDS.objective` attribute. `NRMSE_THRESHOLD`, `REWARD_MIN`, `REWARD_MAX` attributes remain.
 
-- [ ] **Step 1: Modify `env/eehemt_env.py`**
+- [x] **Step 1: Modify `env/eehemt_env.py`**
 
 Add the import (alongside the existing `from evaluation.metrics import calculate_nrmse`):
 
@@ -982,12 +982,12 @@ with:
 
 Nothing else changes: solver-failure `reward = self.REWARD_MIN`, truncation, reward normalization, and episode-best tracking all stay env-owned.
 
-- [ ] **Step 2: Run the EEHEMT test files**
+- [x] **Step 2: Run the EEHEMT test files**
 
 Run: `uv run pytest tests/test_env_measure_vds.py tests/test_eehemt_simulator_seam.py -v`
 Expected: ALL PASS unmodified — `test_reward_uses_transformed_nrmse_objective` and `test_termination_uses_nrmse_threshold_not_arcsinh_huber_threshold` are the numerical-identity gates.
 
-- [ ] **Step 3: Full trio, commit**
+- [x] **Step 3: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `127 passed`; ruff clean; mypy exit 0.
@@ -1013,7 +1013,7 @@ git commit -m "refactor: delegate EEHEMT reward and success to NRMSEMinimizeObje
 - Consumes: `ThresholdMaximizeObjective.RANKED_METRIC/RANKED_ORDER`, `NRMSEMinimizeObjective.RANKED_METRIC/RANKED_ORDER` (Task 4).
 - Produces: the checkpoint metric name exists in exactly one place per objective; specs and Tune checkpoint configs both read it from the objective class.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_checkpoint_metric_single_source.py`:
 
@@ -1059,7 +1059,7 @@ def test_eehemt_metric_single_sourced_from_objective():
 Run: `uv run pytest tests/test_checkpoint_metric_single_source.py -v`
 Expected: PASS already for equality of strings — BUT this test is a characterization of the END state; before the edits it passes because the literals happen to match. Proceed to the edits anyway: the point is that after Step 2 the literals no longer exist outside `env/objectives.py`. (Grep gate in Step 3 enforces that.)
 
-- [ ] **Step 2: Make specs and checkpoint configs read the objective attrs**
+- [x] **Step 2: Make specs and checkpoint configs read the objective attrs**
 
 `problems/hardness.py` — add `from env.objectives import ThresholdMaximizeObjective` and change the two fields:
 
@@ -1088,7 +1088,7 @@ def build_checkpoint_config() -> tune.CheckpointConfig:
 
 `training/eehemt_ppo.py` — same with `NRMSEMinimizeObjective`.
 
-- [ ] **Step 3: Grep gate — the metric literals live only in objectives + tests**
+- [x] **Step 3: Grep gate — the metric literals live only in objectives + tests**
 
 Run:
 
@@ -1100,7 +1100,7 @@ grep -rn --include="*.py" --exclude-dir=.venv --exclude-dir=.git \
 
 Expected: no output (the two metric literals survive only in `env/objectives.py` and in test files).
 
-- [ ] **Step 4: Write the ADR**
+- [x] **Step 4: Write the ADR**
 
 Create `docs/adr/0003-problem-registry-backends-objectives.md`:
 
@@ -1164,11 +1164,11 @@ on the same remedy.
   parameterization (Plan 3).
 ```
 
-- [ ] **Step 5: Append to `.codebase-memory/adr.md`**
+- [x] **Step 5: Append to `.codebase-memory/adr.md`**
 
 Read the file first; append an entry mirroring its existing per-ADR format, titled `0003 — Problem registry, prediction backends, and objective strategies`, summarizing the four decisions and the episode-control refinement in the same style/length as the existing entries.
 
-- [ ] **Step 6: Full trio, commit**
+- [x] **Step 6: Full trio, commit**
 
 Run: `uv run pytest && uv run ruff check . && uv run mypy .`
 Expected: `129 passed`; ruff clean; mypy exit 0.
@@ -1185,7 +1185,7 @@ git commit -m "refactor: single-source checkpoint metrics from objectives and ad
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-23-p2-backends-and-objectives.md` (tick checkboxes)
 
-- [ ] **Step 1: Full verification trio from a clean state**
+- [x] **Step 1: Full verification trio from a clean state**
 
 ```bash
 uv run pytest && uv run ruff check . && uv run mypy .
@@ -1193,7 +1193,7 @@ uv run pytest && uv run ruff check . && uv run mypy .
 
 Expected: `129 passed`, ruff clean, mypy exit 0.
 
-- [ ] **Step 2: Confirm forbidden files untouched**
+- [x] **Step 2: Confirm forbidden files untouched**
 
 ```bash
 git log --stat c2ae3ca..HEAD -- utils/callbacks.py utils/hardness_callbacks.py evaluation/
@@ -1201,7 +1201,7 @@ git log --stat c2ae3ca..HEAD -- utils/callbacks.py utils/hardness_callbacks.py e
 
 Expected: empty output. `git status --short` still shows `.claude/` and `CLAUDE.md` as `??` only.
 
-- [ ] **Step 3: Tick all checkboxes in this plan and commit**
+- [x] **Step 3: Tick all checkboxes in this plan and commit**
 
 ```bash
 git add docs/superpowers/plans/2026-07-23-p2-backends-and-objectives.md
