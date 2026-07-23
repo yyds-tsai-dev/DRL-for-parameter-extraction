@@ -9,6 +9,7 @@ import pandas as pd
 from gymnasium.spaces import Box
 
 from env.backends import PredictionResult
+from env.objectives import ThresholdMaximizeObjective
 from utils.composition_projection import project_bounded_simplex
 
 TUNABLE_FRACTION_NAMES = (
@@ -41,10 +42,12 @@ class MaterialHardnessEnv(gym.Env):
         self.reward_scale = float(config.get("reward_scale", 100.0))
         self.reward_min = float(config.get("reward_min", -3.0))
         self.reward_max = float(config.get("reward_max", 3.0))
-        if self.reward_scale <= 0.0:
-            raise ValueError("reward_scale must be positive")
-        if self.reward_min > self.reward_max:
-            raise ValueError("reward_min must be less than or equal to reward_max")
+        self.objective = ThresholdMaximizeObjective(
+            threshold=self.hardness_threshold,
+            scale=self.reward_scale,
+            reward_min=self.reward_min,
+            reward_max=self.reward_max,
+        )
 
         self.model_package_path = config.get(
             "model_package_path",
@@ -109,10 +112,9 @@ class MaterialHardnessEnv(gym.Env):
         uncertainty_hardness = self._prediction_value(
             prediction, f"Uncertainty {self.target_name}"
         )
-        reward_unclipped = (
-            predicted_hardness - self.hardness_threshold
-        ) / self.reward_scale
-        is_success = bool(predicted_hardness >= self.hardness_threshold)
+        outcome = self.objective.evaluate(predicted_hardness)
+        reward_unclipped = outcome.reward_unclipped
+        is_success = outcome.success
         info = {
             "composition": composition,
             "predicted_hardness": predicted_hardness,
@@ -121,7 +123,7 @@ class MaterialHardnessEnv(gym.Env):
             "is_success": is_success,
         }
 
-        reward = float(np.clip(reward_unclipped, self.reward_min, self.reward_max))
+        reward = outcome.reward
         return self._observation(), reward, True, False, info
 
     def _composition_from_action(self, action) -> dict[str, float]:
