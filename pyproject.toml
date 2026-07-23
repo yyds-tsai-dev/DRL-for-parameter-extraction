@@ -17,11 +17,15 @@ dependencies = [
     "ray[rllib]>=2.48.0",
     "scikit-learn>=1.7.1",
     "scipy>=1.16.1",
-    "tensorflow>=2.19.0",
     "torch>=2.7.1",
     "verilogae>=1.0.0",
     "wandb>=0.21.1",
     "xgboost>=3.0.2",
+]
+
+[project.optional-dependencies]
+keras-inference = [
+    "tensorflow>=2.19.0",
 ]
 
 [dependency-groups]
