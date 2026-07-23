@@ -14,6 +14,7 @@ from env.parameter_flow import (
     ParameterSpecCollection,
 )
 from evaluation.metrics import calculate_nrmse
+from env.objectives import NRMSEMinimizeObjective
 from utils.dim_reduce import get_err_features
 
 load_dotenv()
@@ -196,6 +197,12 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         )
         self.REWARD_MIN = float(os.getenv("REWARD_MIN", -5.0))
         self.REWARD_MAX = float(os.getenv("REWARD_MAX", 5.0))
+        self.objective = NRMSEMinimizeObjective(
+            threshold=self.NRMSE_THRESHOLD,
+            reward_min=self.REWARD_MIN,
+            reward_max=self.REWARD_MAX,
+            epsilon=EPSILON,
+        )
         self.current_step = 0
 
         # === Reward & Error Initialization ===
@@ -450,9 +457,7 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         # return np.clip(normalized_reward, -5.0, 5.0)
 
     def _scaled_reward_from_nrmse(self, nrmse: float) -> float:
-        nrmse_fraction = float(nrmse) / 100.0
-        reward = -np.log10(nrmse_fraction + EPSILON)
-        return float(np.clip(reward, self.REWARD_MIN, self.REWARD_MAX))
+        return self.objective.reward_from_nrmse(nrmse)
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> tuple:
         """
@@ -576,8 +581,8 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         )
 
         # === Check Termination Conditions ===
-        terminated_success = (
-            solver_converged and current_nrmse < self.NRMSE_THRESHOLD
+        terminated_success = solver_converged and self.objective.is_success(
+            current_nrmse
         )
         # if self.use_stagnation:
         #     if abs(reward) < self.STAGNATION_THRESHOLD:
