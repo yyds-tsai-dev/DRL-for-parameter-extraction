@@ -6,6 +6,14 @@ from typing import Any
 
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS, EVALUATION_RESULTS
 
+from evaluation.rllib_plumbing import (
+    as_episode_list as _as_episode_list,
+    episode_agent_steps as _episode_agent_steps,
+    episode_env_steps as _episode_env_steps,
+    foreach_one_eval_runner as _foreach_one_eval_runner,
+    remote_eval_worker_ids as _remote_eval_worker_ids,  # noqa: F401
+    sample_one_eval_runner as _sample_one_eval_runner,
+)
 from utils.logging_config import get_logger
 from utils.plot import save_evaluation_iv_curves
 
@@ -29,26 +37,6 @@ def _episode_final_info(episode) -> dict:
         return infos[-1] or {}
     except (IndexError, TypeError, KeyError):
         return {}
-
-
-def _episode_env_steps(episode) -> int:
-    value = getattr(episode, "env_steps", None)
-    return int(value() if callable(value) else value or 0)
-
-
-def _episode_agent_steps(episode) -> int:
-    value = getattr(episode, "agent_steps", None)
-    return int(value() if callable(value) else value or 0)
-
-
-def _as_episode_list(sample_result: Any) -> list:
-    if sample_result is None:
-        return []
-    if isinstance(sample_result, list):
-        return sample_result
-    if isinstance(sample_result, tuple):
-        return list(sample_result)
-    return [sample_result]
 
 
 def _unwrap_env(candidate: Any) -> Any:
@@ -80,34 +68,6 @@ def _static_plot_data_from_env_runner(env_runner: Any) -> tuple[list, dict] | No
     return list(curve_condition_values), dict(plot_data)
 
 
-def _remote_eval_worker_ids(eval_workers: Any) -> list:
-    get_healthy_worker_ids = getattr(eval_workers, "healthy_worker_ids", None)
-    if callable(get_healthy_worker_ids):
-        return list(get_healthy_worker_ids())
-
-    worker_manager = getattr(eval_workers, "_worker_manager", None)
-    get_actor_ids = getattr(worker_manager, "actor_ids", None)
-    if callable(get_actor_ids):
-        return list(get_actor_ids())
-
-    return []
-
-
-def _foreach_one_eval_runner(eval_workers: Any, func) -> list:
-    actor_ids = _remote_eval_worker_ids(eval_workers)
-    if actor_ids:
-        return eval_workers.foreach_env_runner(
-            func=func,
-            local_env_runner=False,
-            remote_worker_ids=[actor_ids[0]],
-        )
-
-    return eval_workers.foreach_env_runner(
-        func=func,
-        local_env_runner=True,
-    )
-
-
 def _collect_static_plot_data(eval_workers: Any) -> tuple[list, dict] | None:
     foreach_env_runner = getattr(eval_workers, "foreach_env_runner", None)
     if callable(foreach_env_runner):
@@ -117,16 +77,6 @@ def _collect_static_plot_data(eval_workers: Any) -> tuple[list, dict] | None:
                 return result
 
     return _static_plot_data_from_env_runner(eval_workers)
-
-
-def _sample_one_eval_runner(eval_workers: Any) -> list:
-    def sample_and_get_metrics(worker):
-        return (
-            worker.sample(num_episodes=1),
-            worker.get_metrics(),
-        )
-
-    return _foreach_one_eval_runner(eval_workers, sample_and_get_metrics)
 
 
 def _plot_dir() -> str:

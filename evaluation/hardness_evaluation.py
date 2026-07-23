@@ -13,6 +13,15 @@ from typing import Any
 import pandas as pd
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS, EVALUATION_RESULTS
 
+from evaluation.rllib_plumbing import (
+    as_episode_list as _as_episode_list,
+    episode_agent_steps as _episode_agent_steps,
+    episode_env_steps as _episode_env_steps,
+    foreach_one_eval_runner as _foreach_one_eval_runner,  # noqa: F401
+    remote_eval_worker_ids as _remote_eval_worker_ids,  # noqa: F401
+    sample_one_eval_runner as _sample_one_eval_runner,
+)
+
 
 @dataclass(frozen=True)
 class HardnessEvaluationPaths:
@@ -75,16 +84,6 @@ def save_hardness_evaluation(
     return HardnessEvaluationPaths(csv_path=csv_path, json_path=json_path)
 
 
-def _as_episode_list(sample_result: Any) -> list[Any]:
-    if sample_result is None:
-        return []
-    if isinstance(sample_result, list):
-        return sample_result
-    if isinstance(sample_result, tuple):
-        return list(sample_result)
-    return [sample_result]
-
-
 def _episode_final_info(episode: Any) -> dict[str, Any]:
     get_infos = getattr(episode, "get_infos", None)
     if callable(get_infos):
@@ -104,52 +103,6 @@ def _episode_final_info(episode: Any) -> dict[str, Any]:
     except (IndexError, TypeError, KeyError):
         return {}
     return info if isinstance(info, dict) else {}
-
-
-def _episode_env_steps(episode: Any) -> int:
-    value = getattr(episode, "env_steps", None)
-    return int(value() if callable(value) else value or 0)
-
-
-def _episode_agent_steps(episode: Any) -> int:
-    value = getattr(episode, "agent_steps", None)
-    return int(value() if callable(value) else value or 0)
-
-
-def _remote_eval_worker_ids(eval_workers: Any) -> list[Any]:
-    get_healthy_worker_ids = getattr(eval_workers, "healthy_worker_ids", None)
-    if callable(get_healthy_worker_ids):
-        return list(get_healthy_worker_ids())
-
-    worker_manager = getattr(eval_workers, "_worker_manager", None)
-    get_actor_ids = getattr(worker_manager, "actor_ids", None)
-    if callable(get_actor_ids):
-        return list(get_actor_ids())
-
-    return []
-
-
-def _foreach_one_eval_runner(eval_workers: Any, func) -> list[Any]:
-    actor_ids = _remote_eval_worker_ids(eval_workers)
-    foreach_env_runner = getattr(eval_workers, "foreach_env_runner")
-    if actor_ids:
-        return foreach_env_runner(
-            func=func,
-            local_env_runner=False,
-            remote_worker_ids=[actor_ids[0]],
-        )
-
-    return foreach_env_runner(
-        func=func,
-        local_env_runner=True,
-    )
-
-
-def _sample_one_eval_runner(eval_workers: Any) -> list[Any]:
-    def sample_and_get_metrics(worker):
-        return worker.sample(num_episodes=1), worker.get_metrics()
-
-    return _foreach_one_eval_runner(eval_workers, sample_and_get_metrics)
 
 
 def _next_evaluation_index(algorithm: Any) -> int:
