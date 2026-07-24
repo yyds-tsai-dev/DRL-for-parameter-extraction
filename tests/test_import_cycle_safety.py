@@ -9,8 +9,10 @@ interpreter to prove the import order is safe.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_ppo_common_imports_cleanly_before_problems():
@@ -24,6 +26,10 @@ def test_ppo_common_imports_cleanly_before_problems():
         capture_output=True,
         text=True,
         timeout=120,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
     )
 
     assert result.returncode == 0, result.stderr

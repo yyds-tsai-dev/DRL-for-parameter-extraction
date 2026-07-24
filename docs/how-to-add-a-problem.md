@@ -1,16 +1,16 @@
 # How to add a new optimization problem
 
 The PPO harness is problem-agnostic: `--env <name>` resolves through
-`problems/registry.py`, and everything problem-specific travels in a
+`src/problems/registry.py`, and everything problem-specific travels in a
 `ProblemSpec`. Adding a problem requires **no edits to shared harness code**
-(`train_ppo.py`, `training/ppo_common.py`, callbacks/eval plumbing). The
+(`train_ppo.py`, `src/training/ppo_common.py`, callbacks/eval plumbing). The
 executable specification of this contract is
 `tests/test_toy_problem_extension.py` — read it alongside this guide.
 
 ## The five pieces
 
 1. **Prediction backend** — how a candidate becomes a predicted value.
-   Implement the `PredictionBackend` protocol (`env/backends.py`):
+   Implement the `PredictionBackend` protocol (`src/env/backends.py`):
    `predict(features: Mapping[str, float]) -> PredictionResult`, `close()`.
    - Committee model-package ZIPs: reuse `CommitteePackageBackend` as-is.
    - ANN / other surrogates: implement the protocol directly; do not inherit
@@ -18,7 +18,7 @@ executable specification of this contract is
    - Uncertainties are diagnostic only — never let them into reward.
 2. **Objective** — how a predicted value becomes reward/success. Reuse
    `ThresholdMaximizeObjective` or `NRMSEMinimizeObjective`
-   (`env/objectives.py`) when the semantics match; otherwise add a class with
+   (`src/env/objectives.py`) when the semantics match; otherwise add a class with
    the same shape (`RANKED_METRIC`, `RANKED_ORDER`, reward + success methods).
    Episode control (termination/truncation) belongs to your env, not the
    objective (ADR 0003).
@@ -31,7 +31,7 @@ executable specification of this contract is
    `build_env_config(args)`, `build_ppo_config(args, *, num_learners,
    num_gpus_per_learner)` (delegate to
    `training.ppo_common.build_base_ppo_config`), `build_checkpoint_config()`,
-   and a `<NAME>_WANDB_PROJECT` constant. `training/hardness_ppo.py` is the
+   and a `<NAME>_WANDB_PROJECT` constant. `src/training/hardness_ppo.py` is the
    reference implementation (~90 lines).
 5. **Registration** — build a `ProblemSpec` and call
    `problems.registry.register(spec)` (see `problems/hardness.py`). Source

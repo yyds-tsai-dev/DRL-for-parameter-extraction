@@ -18,7 +18,7 @@
 uv sync
 ```
 
-模型檔與量測資料不進版控。硬度模型 ZIP 放 `env/hardness/`,輸入 CSV 放
+模型檔與量測資料不進版控。硬度模型 ZIP 放 `src/env/hardness/`,輸入 CSV 放
 `data/hardness/`,目錄裡的 `PUT_*_HERE.txt` 就是佔位提示。EEHEMT 量測資料
 放 `data/eehemt/`。
 
@@ -58,20 +58,20 @@ uv run mypy .
 
 ## 新增一個問題
 
-框架靠 `problems/registry.py` 解析 `--env <名稱>`,問題專屬的東西全部裝在
+框架靠 `src/problems/registry.py` 解析 `--env <名稱>`,問題專屬的東西全部裝在
 `ProblemSpec` 裡。新增問題不需要動任何共享程式碼。這句話有可執行的證明:
 `tests/test_toy_problem_extension.py` 只靠測試程式碼就註冊了一個完整的玩
 具問題,建議搭配本節一起讀。
 
 一個問題由五個部分組成:
 
-1. 預測後端,負責把一個候選解變成預測值。實作 `env/backends.py` 的
+1. 預測後端,負責把一個候選解變成預測值。實作 `src/env/backends.py` 的
    `PredictionBackend` 協定:`predict(features) -> PredictionResult` 加上
    `close()`。committee 模型包 ZIP 直接沿用 `CommitteePackageBackend` 即
    可;類神經網路或其他代理模型直接實作協定,不必沿用 committee 的 ZIP 格
    式,也不必裝 verilogae 工具鏈。不確定度只作診斷用,別放進 reward。
 2. 目標,負責把預測值變成 reward 與成功判定。語意相符時直接沿用
-   `env/objectives.py` 的 `ThresholdMaximizeObjective` 或
+   `src/env/objectives.py` 的 `ThresholdMaximizeObjective` 或
    `NRMSEMinimizeObjective`;不符就照同樣的形狀新增一個類別,帶
    `RANKED_METRIC`、`RANKED_ORDER` 與 reward、成功判定方法。episode 的控
    制(termination、truncation)屬於環境,不屬於目標,原因記錄在 ADR
@@ -85,7 +85,7 @@ uv run mypy .
    num_gpus_per_learner)`(委派給
    `training.ppo_common.build_base_ppo_config`)、
    `build_checkpoint_config()`,以及一個 `<名稱>_WANDB_PROJECT` 常數。參考
-   實作是 `training/hardness_ppo.py`,大約 90 行。
+   實作是 `src/training/hardness_ppo.py`,大約 90 行。
 5. 註冊:組一個 `ProblemSpec`,呼叫 `problems.registry.register(spec)`,寫
    法照 `problems/hardness.py`。`checkpoint_metric` 與 `checkpoint_order`
    從你的目標類別拿,讓指標名稱只存在一個地方。
@@ -126,7 +126,7 @@ import pandas as pd
 
 from env import InferenceModel
 
-model = InferenceModel("env/hardness/XGB_model_selection_package.zip")
+model = InferenceModel("src/env/hardness/XGB_model_selection_package.zip")
 
 input_df = pd.DataFrame(
     [
@@ -153,7 +153,7 @@ print(result_df)
 from env import predict
 
 result_df = predict(
-    model_package_path="env/hardness/XGB_model_selection_package.zip",
+    model_package_path="src/env/hardness/XGB_model_selection_package.zip",
     input_data="data/hardness/input.csv",
 )
 ```
@@ -162,7 +162,7 @@ result_df = predict(
 
 ```bash
 uv run python scripts/run_model_inference.py \
-  --model env/hardness/XGB_model_selection_package.zip \
+  --model src/env/hardness/XGB_model_selection_package.zip \
   --input data/hardness/input.csv \
   --output data/hardness/output.csv
 ```
