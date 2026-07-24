@@ -80,8 +80,7 @@ The pieces are:
 4. A training module: declares the problem's command-line options and PPO
    settings. `src/training/hardness_ppo.py` is the reference, at about 90
    lines. The module provides `add_env_args(parser, current_dir)`,
-   `build_env_config(args)`, `build_ppo_config(args, *, num_learners,
-   num_gpus_per_learner)`, `build_checkpoint_config()`, and a
+   `build_env_config(args)`, `build_ppo_config(args, *, num_learners, num_gpus_per_learner)`, `build_checkpoint_config()`, and a
    `<NAME>_WANDB_PROJECT` constant.
 5. Registration: a small file under `src/problems/` that gives the problem
    its `--env` name. Copy `problems/hardness.py`: build a `ProblemSpec` and
@@ -90,9 +89,7 @@ The pieces are:
    single home.
 
 A minimal working example is `tests/test_toy_problem_extension.py`, which
-builds an example problem out of exactly these pieces from test code alone,
-then checks that the command line accepts `--env toy_strength` and that the
-PPO config assembles. To turn it into a real problem, follow its shape with
+builds an example problem out of exactly these pieces from test code alone. To turn it into a real problem, follow its shape with
 your own backend and environment, move the module under `src/problems/`, and
 register it from `problems/__init__.py`.
 
