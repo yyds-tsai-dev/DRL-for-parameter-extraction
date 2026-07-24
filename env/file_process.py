@@ -1,53 +1,7 @@
 import os
 import zipfile
-import io
-import importlib.util
 import json
 import pandas as pd
-
-def zip_result(folder_path):
-    zip_buffer = io.BytesIO()
-
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for root, dirs, files in os.walk(folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                # 將 zip 中的路徑改為相對於資料夾根目錄的路徑
-                arcname = os.path.relpath(file_path, start=folder_path)
-                zip_file.write(file_path, arcname=arcname)
-
-    zip_buffer.seek(0)  
-    return zip_buffer
-
-def zip_folder_and_feature(folder_path, feature_file_path, output_zip_path, extra_file_paths=None):
-    extra_file_paths = extra_file_paths or []
-    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # model files
-        for root, _, files in os.walk(folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, start=os.path.dirname(folder_path))  # 讓zip裡有完整資料夾層級
-                zipf.write(file_path, arcname=arcname)
-        
-        # feature file
-        if os.path.exists(feature_file_path):
-            feature_arcname = os.path.join("features", os.path.basename(feature_file_path))  # 放到 zip 裡一個 features/ 資料夾
-            zipf.write(feature_file_path, arcname=feature_arcname)
-
-        for extra_file_path in extra_file_paths:
-            if os.path.exists(extra_file_path):
-                extra_arcname = os.path.join("metadata", os.path.basename(extra_file_path))
-                zipf.write(extra_file_path, arcname=extra_arcname)
-
-
-def zip_folder_contents(folder_path, output_zip_path):
-    with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, start=folder_path)
-                zipf.write(file_path, arcname=arcname)
-
 
 def unzip_strip_top_level(zip_file, extract_to):
     with zipfile.ZipFile(zip_file, 'r') as zip_ref:
@@ -179,18 +133,3 @@ def apply_package_feature_encoding(df, metadata):
         return coerce_model_features_numeric(df)
 
     return coerce_model_features_numeric(df)
-
-def load_feature_and_target(path="datasets/temp_opt_feature.py"):
-    if path.lower().endswith(".json"):
-        with open(path, "r", encoding="utf-8") as f:
-            features_dict = json.load(f)
-    else:
-        spec = importlib.util.spec_from_file_location("feature_config", path)
-        feature_config = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(feature_config)
-        features_dict = feature_config.features
-
-    return {
-        "features": features_dict["features"],
-        "targets": features_dict["target"]
-    }

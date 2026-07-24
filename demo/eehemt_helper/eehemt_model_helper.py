@@ -312,32 +312,3 @@ class EEHEMTModelHelper:
             curve_condition_value=curve_condition_value,
             modelcard_updates=sim_updates,
         )
-
-    def simulate_and_plot_from_json_init(
-        self,
-        json_path: str,
-        vgs: np.ndarray,
-        vds_voltage: float = 0.5,
-        curve_condition_value: float | None = None,
-        title: str = "EEHEMT Target I-V Curve",
-        save_name: str | None = None,
-        log_y: bool = False,
-        modelcard_updates: dict[str, float] | None = None,
-    ) -> tuple[np.ndarray, str]:
-        """Load init params from JSON, simulate Ids, then save target I-V plot."""
-        i_sim = self.simulate_ids_from_json_init(
-            json_path=json_path,
-            vgs=vgs,
-            vds_voltage=vds_voltage,
-            curve_condition_value=curve_condition_value,
-            modelcard_updates=modelcard_updates,
-        )
-        save_path = self.plot_iv_curve(
-            vgs=vgs,
-            i_sim=i_sim,
-            i_meas=None,
-            title=title,
-            save_name=save_name,
-            log_y=log_y,
-        )
-        return i_sim, save_path

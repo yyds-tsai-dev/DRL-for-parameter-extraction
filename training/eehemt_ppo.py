@@ -30,7 +30,6 @@ def add_env_args(
     parser.add_argument("--random_init", action="store_true")
     parser.add_argument("--reduce_obs_err_dim", action="store_true")
     parser.add_argument("--reward_norm", action="store_true")
-    parser.add_argument("--use_stagnation", action="store_true")
     parser.add_argument(
         "--rs_ext",
         type=float,
@@ -71,7 +70,6 @@ def build_env_config(args: argparse.Namespace) -> dict[str, object]:
         "random_init": args.random_init,
         "reduce_obs_err_dim": args.reduce_obs_err_dim,
         "reward_norm": args.reward_norm,
-        "use_stagnation": args.use_stagnation,
         "rs_ext": args.rs_ext,
         "rd_ext": args.rd_ext,
         "ir_drop_n_iter": args.ir_drop_n_iter,
