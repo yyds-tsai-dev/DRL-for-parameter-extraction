@@ -50,9 +50,9 @@ Each problem defines its own objective and checkpoint ranking:
 
 ## Adding a new problem
 
-The two built-in problems are plugins, and you can add your own. Any problem
-shaped like "search for an input whose predicted value is good enough" fits.
-You write a few small pieces, register them under a name, and
+The two current problems are both plugins: any problem shaped like "search
+for an input whose predicted value is good enough" fits. You write a few
+small pieces, register them under a name, and
 `train_ppo.py --env <name>` picks the new problem up. None of the shared
 training code (`train_ppo.py`, `src/training/ppo_common.py`) needs to change.
 
@@ -62,9 +62,7 @@ The pieces are:
    predicted value. If your model is packaged as a ZIP like the hardness
    model, the existing `CommitteePackageBackend` already handles it. For
    anything else, write a small class with a `predict` and a `close` method;
-   `src/env/backends.py` shows the shape, and the verilogae toolchain is not
-   needed. The uncertainty a backend returns is logged only; keep it out of
-   the reward.
+   `src/env/backends.py` shows the shape.
 2. An objective: the rule that turns a prediction into a reward and decides
    when the problem counts as solved. `src/env/objectives.py` has two ready
    to use: "push a value above a threshold" and "push an error below a
@@ -83,9 +81,8 @@ The pieces are:
    settings. `src/training/hardness_ppo.py` is the reference, at about 90
    lines. The module provides `add_env_args(parser, current_dir)`,
    `build_env_config(args)`, `build_ppo_config(args, *, num_learners,
-   num_gpus_per_learner)` (which calls
-   `training.ppo_common.build_base_ppo_config`), `build_checkpoint_config()`,
-   and a `<NAME>_WANDB_PROJECT` constant.
+   num_gpus_per_learner)`, `build_checkpoint_config()`, and a
+   `<NAME>_WANDB_PROJECT` constant.
 5. Registration: a small file under `src/problems/` that gives the problem
    its `--env` name. Copy `problems/hardness.py`: build a `ProblemSpec` and
    call `problems.registry.register(spec)`. Take `checkpoint_metric` and
@@ -109,7 +106,6 @@ Before you call it done:
 - Tests swap the backend for a stub, so they need no model file or GPU; see
   `tests/conftest.py` and the existing environment tests.
 - `uv run pytest`, `uv run ruff check .`, and `uv run mypy .` all pass.
-- Decisions that change a layer boundary go in `docs/adr/`.
 
 ## Local model inference
 
