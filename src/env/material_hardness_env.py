@@ -21,7 +21,7 @@ TUNABLE_FRACTION_NAMES = (
     "frac_Ni",
 )
 FIXED_FRACTIONS = {"frac_Cu": 0.0, "frac_Mo": 0.0}
-DEFAULT_MODEL_PACKAGE_PATH = "env/hardness/XGB_model_selection_package.zip"
+DEFAULT_MODEL_PACKAGE_PATH = "src/env/hardness/XGB_model_selection_package.zip"
 MODEL_PACKAGE_PATH_ENV = "HARDNESS_MODEL_PACKAGE_PATH"
 _MISSING = object()
 

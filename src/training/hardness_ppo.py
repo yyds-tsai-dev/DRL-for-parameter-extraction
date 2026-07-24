@@ -24,7 +24,7 @@ def add_env_args(
             current_dir,
             os.getenv(
                 "HARDNESS_MODEL_PACKAGE_PATH",
-                "env/hardness/XGB_model_selection_package.zip",
+                "src/env/hardness/XGB_model_selection_package.zip",
             ),
         ),
     )

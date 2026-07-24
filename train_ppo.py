@@ -1,12 +1,16 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 from types import ModuleType
 
 import ray
 from dotenv import load_dotenv
 from ray import tune
 from ray.rllib.algorithms.ppo import PPO
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from problems import registry as problem_registry
 from training.ppo_common import (
@@ -43,6 +47,7 @@ def build_ray_runtime_env(current_dir: str) -> dict[str, object]:
     return {
         "env_vars": {
             "PROJECT_ROOT": current_dir,
+            "PYTHONPATH": os.path.join(current_dir, "src"),
         },
         "excludes": [
             ".git/**",

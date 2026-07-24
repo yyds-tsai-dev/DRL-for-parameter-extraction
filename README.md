@@ -22,7 +22,7 @@ uv sync
 ```
 
 Model artifacts and measurement data are not committed. Put the hardness model
-ZIP in `env/hardness/` and input CSVs in `data/hardness/`; the `PUT_*_HERE.txt`
+ZIP in `src/env/hardness/` and input CSVs in `data/hardness/`; the `PUT_*_HERE.txt`
 placeholders mark the spots. EEHEMT measurement data goes in `data/eehemt/`.
 
 ## Training
@@ -62,7 +62,7 @@ inference model, so it runs without the model ZIP or a GPU.
 
 ## Adding a new problem
 
-The harness resolves `--env <name>` through `problems/registry.py`, and
+The harness resolves `--env <name>` through `src/problems/registry.py`, and
 everything problem-specific travels in a `ProblemSpec`. Adding a problem takes
 no edits to shared harness code. The executable proof of that claim is
 `tests/test_toy_problem_extension.py`, which registers a complete toy problem
@@ -71,7 +71,7 @@ from test code alone; read it alongside this section.
 A problem consists of five pieces:
 
 1. A prediction backend, which turns one candidate into a predicted value.
-   Implement the `PredictionBackend` protocol in `env/backends.py`:
+   Implement the `PredictionBackend` protocol in `src/env/backends.py`:
    `predict(features) -> PredictionResult` plus `close()`. Committee
    model-package ZIPs can reuse `CommitteePackageBackend` as-is. An ANN or
    other surrogate implements the protocol directly and does not need the
@@ -79,7 +79,7 @@ A problem consists of five pieces:
    diagnostic only; keep them out of the reward.
 2. An objective, which turns a predicted value into reward and success. Reuse
    `ThresholdMaximizeObjective` or `NRMSEMinimizeObjective` from
-   `env/objectives.py` when the semantics match, or add a class with the same
+   `src/env/objectives.py` when the semantics match, or add a class with the same
    shape: `RANKED_METRIC`, `RANKED_ORDER`, and the reward and success methods.
    Episode control (termination, truncation) belongs to your environment, not
    the objective. ADR 0003 records why.
@@ -92,7 +92,7 @@ A problem consists of five pieces:
    `build_env_config(args)`, `build_ppo_config(args, *, num_learners,
    num_gpus_per_learner)` (delegate to
    `training.ppo_common.build_base_ppo_config`), `build_checkpoint_config()`,
-   and a `<NAME>_WANDB_PROJECT` constant. `training/hardness_ppo.py` is the
+   and a `<NAME>_WANDB_PROJECT` constant. `src/training/hardness_ppo.py` is the
    reference implementation, at roughly 90 lines.
 5. Registration: build a `ProblemSpec` and call
    `problems.registry.register(spec)`, following `problems/hardness.py`. Take
@@ -137,7 +137,7 @@ import pandas as pd
 
 from env import InferenceModel
 
-model = InferenceModel("env/hardness/XGB_model_selection_package.zip")
+model = InferenceModel("src/env/hardness/XGB_model_selection_package.zip")
 
 input_df = pd.DataFrame(
     [
@@ -164,7 +164,7 @@ For a typed interface without DataFrame column names, wrap the package in
 from env import predict
 
 result_df = predict(
-    model_package_path="env/hardness/XGB_model_selection_package.zip",
+    model_package_path="src/env/hardness/XGB_model_selection_package.zip",
     input_data="data/hardness/input.csv",
 )
 ```
@@ -173,7 +173,7 @@ result_df = predict(
 
 ```bash
 uv run python scripts/run_model_inference.py \
-  --model env/hardness/XGB_model_selection_package.zip \
+  --model src/env/hardness/XGB_model_selection_package.zip \
   --input data/hardness/input.csv \
   --output data/hardness/output.csv
 ```
