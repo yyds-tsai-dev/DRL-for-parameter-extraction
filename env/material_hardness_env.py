@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from gymnasium.spaces import Box
 
+from env.backends import PredictionResult
+from env.objectives import ThresholdMaximizeObjective
 from utils.composition_projection import project_bounded_simplex
 
 TUNABLE_FRACTION_NAMES = (
@@ -40,21 +42,30 @@ class MaterialHardnessEnv(gym.Env):
         self.reward_scale = float(config.get("reward_scale", 100.0))
         self.reward_min = float(config.get("reward_min", -3.0))
         self.reward_max = float(config.get("reward_max", 3.0))
-        if self.reward_scale <= 0.0:
-            raise ValueError("reward_scale must be positive")
-        if self.reward_min > self.reward_max:
-            raise ValueError("reward_min must be less than or equal to reward_max")
+        self.objective = ThresholdMaximizeObjective(
+            threshold=self.hardness_threshold,
+            scale=self.reward_scale,
+            reward_min=self.reward_min,
+            reward_max=self.reward_max,
+        )
 
         self.model_package_path = config.get(
             "model_package_path",
             os.getenv(MODEL_PACKAGE_PATH_ENV, DEFAULT_MODEL_PACKAGE_PATH),
         )
-        inference_model_cls = config.get("inference_model_cls")
-        if inference_model_cls is None:
-            from env import InferenceModel
+        self.target_name = str(config.get("target_name", "hardness"))
+        prediction_backend_cls = config.get("prediction_backend_cls")
+        if prediction_backend_cls is not None:
+            self.model = prediction_backend_cls(self.model_package_path)
+            self._uses_backend = True
+        else:
+            inference_model_cls = config.get("inference_model_cls")
+            if inference_model_cls is None:
+                from env import InferenceModel
 
-            inference_model_cls = InferenceModel
-        self.model = inference_model_cls(self.model_package_path)
+                inference_model_cls = InferenceModel
+            self.model = inference_model_cls(self.model_package_path)
+            self._uses_backend = False
 
         self.action_space = Box(
             low=-1.0,
@@ -70,19 +81,19 @@ class MaterialHardnessEnv(gym.Env):
 
     def step(self, action):
         composition = self._composition_from_action(action)
-        prediction = self.model.predict([composition], include_input=False)
+        prediction = self._raw_predict(composition)
 
-        predicted_hardness = self._read_prediction_value(
-            prediction, "Predicted hardness"
+        predicted_hardness = self._prediction_value(
+            prediction, f"Predicted {self.target_name}"
         )
         if not np.isfinite(predicted_hardness):
             raw_predicted_hardness = predicted_hardness
             failure_predicted_hardness = (
                 self.hardness_threshold + self.reward_min * self.reward_scale
             )
-            uncertainty_hardness = self._read_prediction_value(
+            uncertainty_hardness = self._prediction_value(
                 prediction,
-                "Uncertainty hardness",
+                f"Uncertainty {self.target_name}",
                 default=0.0,
             )
             if not np.isfinite(uncertainty_hardness):
@@ -98,13 +109,12 @@ class MaterialHardnessEnv(gym.Env):
             }
             return self._observation(), self.reward_min, True, False, info
 
-        uncertainty_hardness = self._read_prediction_value(
-            prediction, "Uncertainty hardness"
+        uncertainty_hardness = self._prediction_value(
+            prediction, f"Uncertainty {self.target_name}"
         )
-        reward_unclipped = (
-            predicted_hardness - self.hardness_threshold
-        ) / self.reward_scale
-        is_success = bool(predicted_hardness >= self.hardness_threshold)
+        outcome = self.objective.evaluate(predicted_hardness)
+        reward_unclipped = outcome.reward_unclipped
+        is_success = outcome.success
         info = {
             "composition": composition,
             "predicted_hardness": predicted_hardness,
@@ -113,7 +123,7 @@ class MaterialHardnessEnv(gym.Env):
             "is_success": is_success,
         }
 
-        reward = float(np.clip(reward_unclipped, self.reward_min, self.reward_max))
+        reward = outcome.reward
         return self._observation(), reward, True, False, info
 
     def _composition_from_action(self, action) -> dict[str, float]:
@@ -147,6 +157,33 @@ class MaterialHardnessEnv(gym.Env):
 
     def _observation(self) -> np.ndarray:
         return np.zeros(1, dtype=np.float32)
+
+    def _raw_predict(self, composition: dict[str, float]):
+        if self._uses_backend:
+            return self.model.predict(composition)
+        return self.model.predict([composition], include_input=False)
+
+    def _prediction_value(
+        self,
+        prediction: object,
+        column_name: str,
+        default: object = _MISSING,
+    ) -> float:
+        if isinstance(prediction, PredictionResult):
+            kind, _, target = column_name.partition(" ")
+            field = (
+                prediction.values
+                if kind.casefold() == "predicted"
+                else prediction.uncertainties
+            )
+            expected = target.casefold()
+            for key, value in field.items():
+                if str(key).casefold() == expected:
+                    return float(value)
+            if default is not _MISSING:
+                return float(default)
+            raise KeyError(f"Prediction output missing column: {column_name}")
+        return self._read_prediction_value(prediction, column_name, default)
 
     @staticmethod
     def _read_prediction_value(

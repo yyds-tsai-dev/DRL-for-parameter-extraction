@@ -40,6 +40,18 @@ _Avoid_: unconstrained fraction vector, raw action vector
 The material optimization goal for policy quality: find a Feasible Material Composition whose predicted hardness is at least 650. Model uncertainty may be inspected as a diagnostic, but it is not part of the first-pass objective.
 _Avoid_: NRMSE Objective, fit objective
 
+**Prediction Backend**:
+The component that turns one candidate (an EEHEMT modelcard or a Material Composition) into predicted values, behind the `PredictionBackend` protocol. Physics simulators, committee model packages, and ANN surrogates are all Prediction Backends.
+_Avoid_: the model (ambiguous), inference script
+
+**Objective Strategy**:
+The component that turns a predicted value into reward and success, and names the checkpoint-ranking metric. The NRMSE Objective and the Hardness Objective are realized by `NRMSEMinimizeObjective` and `ThresholdMaximizeObjective`. Episode control stays in the environment.
+_Avoid_: reward function (partial), fitness
+
+**Problem Spec**:
+The registration record that binds one optimization problem's environment, training assembly, W&B project, and checkpoint metric under a `--env` name. Adding a problem means registering a Problem Spec, not editing the harness.
+_Avoid_: env entry, config block
+
 ## Example Dialogue
 
 Dev: "Should we save every I-V curve from parallel training?"

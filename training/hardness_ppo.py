@@ -5,7 +5,9 @@ from ray import tune
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from env.material_hardness_env import MaterialHardnessEnv
+from env.objectives import ThresholdMaximizeObjective
 from evaluation.hardness_evaluation import evaluate_and_save_hardness
+from training.ppo_common import build_base_ppo_config
 from utils.hardness_callbacks import HardnessMetricsCallback
 
 HARDNESS_WANDB_PROJECT = "PPO_for_material_hardness_optimization"
@@ -65,47 +67,20 @@ def build_ppo_config(
     num_learners: int,
     num_gpus_per_learner: float,
 ) -> PPOConfig:
-    return (
-        PPOConfig()
-        .environment(
-            env=MaterialHardnessEnv,
-            env_config=build_env_config(args),
-        )
-        .env_runners(
-            num_env_runners=args.num_env_runners,
-            observation_filter=args.observation_filter,
-        )
-        .training(
-            train_batch_size_per_learner=args.train_batch_size_per_learner,
-            num_epochs=args.num_epochs,
-            minibatch_size=args.minibatch_size,
-            lr=args.lr * num_learners,
-            entropy_coeff=args.entropy_coeff,  # type: ignore[arg-type]
-            grad_clip=args.grad_clip,
-            vf_loss_coeff=args.vf_loss_coeff,
-            vf_clip_param=20.0,
-        )
-        .learners(
-            num_learners=num_learners,
-            num_gpus_per_learner=num_gpus_per_learner,
-        )
-        .callbacks(
-            callbacks_class=HardnessMetricsCallback,
-        )
-        .evaluation(
-            evaluation_interval=args.evaluation_interval,
-            evaluation_num_env_runners=args.evaluation_num_env_runners,
-            evaluation_duration=1,
-            evaluation_duration_unit="episodes",
-            custom_evaluation_function=evaluate_and_save_hardness,
-            evaluation_config={"explore": False},
-        )
+    return build_base_ppo_config(
+        args,
+        num_learners=num_learners,
+        num_gpus_per_learner=num_gpus_per_learner,
+        env_cls=MaterialHardnessEnv,
+        env_config=build_env_config(args),
+        callbacks_class=HardnessMetricsCallback,
+        custom_evaluation_function=evaluate_and_save_hardness,
     )
 
 
 def build_checkpoint_config() -> tune.CheckpointConfig:
     return tune.CheckpointConfig(
         num_to_keep=5,
-        checkpoint_score_attribute="env_runners/max_predicted_hardness",
-        checkpoint_score_order="max",
+        checkpoint_score_attribute=ThresholdMaximizeObjective.RANKED_METRIC,
+        checkpoint_score_order=ThresholdMaximizeObjective.RANKED_ORDER,
     )

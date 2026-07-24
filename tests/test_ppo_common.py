@@ -60,3 +60,12 @@ def test_resolve_learner_resources_uses_env_learners_without_cuda(monkeypatch):
     monkeypatch.setenv("NUM_LEARNERS", "2")
 
     assert resolve_learner_resources() == (2, 0.0)
+
+
+def test_common_parser_observation_filter_defaults_to_nofilter(monkeypatch):
+    monkeypatch.delenv("OBSERVATION_FILTER", raising=False)
+    parser = build_common_arg_parser("/project")
+
+    args = parser.parse_args([])
+
+    assert args.observation_filter == "NoFilter"
