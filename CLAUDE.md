@@ -26,7 +26,7 @@ One PPO training harness (Ray RLlib + Tune, W&B logging) drives two independent 
 1. **`eehemt`** — EEHEMT device-model parameter extraction: fit simulated I-V curves to measured data. The Verilog-A model in `src/env/eehemt/` is compiled via `verilogae`.
 2. **`hardness`** — material composition optimization: find an alloy composition whose predicted hardness (from an XGBoost committee model package) meets a threshold.
 
-`train_ppo.py` is the single entrypoint. `--env` resolves through the problem registry (`src/problems/registry.py`; built-ins self-register on `import problems`), which binds each problem's training module (`src/training/eehemt_ppo.py` / `src/training/hardness_ppo.py`: env-specific CLI args, callback, custom evaluation function, checkpoint ranking). Shared args/resources/W&B wiring and the generic PPO chain live in `src/training/ppo_common.py`. Adding a problem needs no shared-code edits — see `docs/how-to-add-a-problem.md`.
+`train_ppo.py` is the single entrypoint. `--env` resolves through the problem registry (`src/problems/registry.py`; built-ins self-register on `import problems`), which binds each problem's training module (`src/training/eehemt_ppo.py` / `src/training/hardness_ppo.py`: env-specific CLI args, callback, custom evaluation function, checkpoint ranking). Shared args/resources/W&B wiring and the generic PPO chain live in `src/training/ppo_common.py`. Adding a problem needs no shared-code edits — see the "Adding a new problem" section in `README.md`.
 
 Layer boundaries (kept deliberately stable — see `docs/adr/` and `.codebase-memory/adr.md`):
 

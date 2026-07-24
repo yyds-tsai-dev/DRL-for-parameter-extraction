@@ -44,73 +44,60 @@ uv run python train_ppo.py --env eehemt
   `env_runners/max_predicted_hardness` 取最高。committee 模型的不確定度只
   當診斷訊號記錄,不會進到 reward。
 
-## 測試、lint 與型別檢查
-
-```bash
-uv run pytest
-uv run ruff check .
-uv run mypy .
-```
-
-一律透過 `uv run` 執行。全域安裝的 mypy 看不到專案 venv 裡的套件,會報出
-假錯誤。測試會自行 stub 掉推論模型,所以沒有模型 ZIP、沒有 GPU 也能跑完
-整套測試。
-
 ## 新增一個問題
 
-框架靠 `src/problems/registry.py` 解析 `--env <名稱>`,問題專屬的東西全部裝在
-`ProblemSpec` 裡。新增問題不需要動任何共享程式碼。這句話有可執行的證明:
-`tests/test_toy_problem_extension.py` 只靠測試程式碼就註冊了一個完整的玩
-具問題,建議搭配本節一起讀。
+目前的兩個問題都是外掛,只要問題長得像「找一個輸入,讓某個預測值夠好」就適用。寫好幾個小元件、取個名字註冊,`train_ppo.py --env <名稱>` 就能直接用,
+過程中不需要改動共用的訓練程式(`train_ppo.py`、`src/training/ppo_common.py`)。
 
-一個問題由五個部分組成:
+需要的元件:
 
-1. 預測後端,負責把一個候選解變成預測值。實作 `src/env/backends.py` 的
-   `PredictionBackend` 協定:`predict(features) -> PredictionResult` 加上
-   `close()`。committee 模型包 ZIP 直接沿用 `CommitteePackageBackend` 即
-   可;類神經網路或其他代理模型直接實作協定,不必沿用 committee 的 ZIP 格
-   式,也不必裝 verilogae 工具鏈。不確定度只作診斷用,別放進 reward。
-2. 目標,負責把預測值變成 reward 與成功判定。語意相符時直接沿用
-   `src/env/objectives.py` 的 `ThresholdMaximizeObjective` 或
-   `NRMSEMinimizeObjective`;不符就照同樣的形狀新增一個類別,帶
-   `RANKED_METRIC`、`RANKED_ORDER` 與 reward、成功判定方法。episode 的控
-   制(termination、truncation)屬於環境,不屬於目標,原因記錄在 ADR
-   0003。
-3. 一個 `gymnasium.Env`,其觀測值在所有 reset 模式下都要落在有限邊界的
-   float32 Box 裡。後端要能經由 env-config 注入,測試才能替換成假件。
-   `MaterialHardnessEnv` 的 `prediction_backend_cls` 與
-   `EEHEMTEnv_Measure_VDS` 的 `simulator_factory` 是兩個現成的示範。
-4. 訓練模組,對外提供 `add_env_args(parser, current_dir)`、
-   `build_env_config(args)`、`build_ppo_config(args, *, num_learners,
-   num_gpus_per_learner)`(委派給
-   `training.ppo_common.build_base_ppo_config`)、
-   `build_checkpoint_config()`,以及一個 `<名稱>_WANDB_PROJECT` 常數。參考
-   實作是 `src/training/hardness_ppo.py`,大約 90 行。
-5. 註冊:組一個 `ProblemSpec`,呼叫 `problems.registry.register(spec)`,寫
-   法照 `problems/hardness.py`。`checkpoint_metric` 與 `checkpoint_order`
-   從你的目標類別拿,讓指標名稱只存在一個地方。
+1. 預測後端:把一個候選解丟進去、吐出預測值的程式。如果你的模型和硬度模
+   型一樣打包成 ZIP,現成的 `CommitteePackageBackend` 直接能
+   用;其他模型就寫一個有 `predict` 和 `close` 方法的小類別,寫法看
+   `src/env/backends.py`。
+2. 目標:把預測值換算成 reward、並判斷問題算不算解決的規則。
+   `src/env/objectives.py` 裡有兩個現成的:「把某個值推過門檻」和「把誤
+   差壓到門檻以下」,符合就能直接拿來用。都不合用的話,照同樣的形狀自己
+   寫一個類別:`RANKED_METRIC` 與 `RANKED_ORDER` 兩個常數,加上算
+   reward 和判斷成功的方法。episode 何時結束是環境的事,不要寫進目標裡。
+3. 環境:一個標準的 Gymnasium 環境,把後端和目標接起來。
+   `src/env/material_hardness_env.py` 是可以照抄的範例。有兩個要求:觀測
+   值在任何 reset 模式下都要落在有限邊界的 float32 Box 裡;後端要經由
+   env config 傳進來,測試才能換成虛擬物件。`MaterialHardnessEnv` 的
+   `prediction_backend_cls` 和 `EEHEMTEnv_Measure_VDS` 的
+   `simulator_factory` 是兩種現成寫法。
+4. 訓練模組:宣告這個問題的命令列選項和 PPO 設定。可參考
+   `src/training/hardness_ppo.py`,大約 90 行。模組要提供
+   `add_env_args(parser, current_dir)`、`build_env_config(args)`、
+   `build_ppo_config(args, *, num_learners, num_gpus_per_learner)`、
+   `build_checkpoint_config()`,和一個 `<名稱>_WANDB_PROJECT` 常數。
+5. 註冊:在 `src/problems/` 底下加一個小檔案,給問題取 `--env` 用的名字,
+   寫法照 `problems/hardness.py`:組一個 `ProblemSpec`,呼叫
+   `problems.registry.register(spec)`。`checkpoint_metric` 和
+   `checkpoint_order` 直接從你的目標類別拿,指標名稱就只有一個出處。
 
-收尾前的確認清單:
-
-- committee ZIP 放 `env/<問題>/`,輸入資料放 `data/<問題>/`,兩者都不進版
-  控,記得補 `PUT_*_HERE.txt` 佔位檔。
-- 超參數預設值照既有寫法:`add_env_args` 裡用 `os.getenv` 當 fallback,並
-  在 `.env` 裡留下說明。
-- 測試經由注入縫替換後端,不需要模型檔或 GPU,參考 `tests/conftest.py` 與
-  既有的環境測試。
-- `uv run pytest && uv run ruff check . && uv run mypy .` 全綠。
-- 動到層邊界的新決策要記進 `docs/adr/` 與 `.codebase-memory/adr.md`。
-
-想把玩具範例升級成真的問題:照抄 `tests/test_toy_problem_extension.py` 的
-形狀,換上你的後端與環境,把模組搬進 `problems/`,再從
+`tests/test_toy_problem_extension.py` 就是用這幾個元件從零組出一個範例問
+題,是最小的完整範例:它只靠測試程式碼就註冊了一個新問題,並驗證命令列接
+受 `--env toy_strength`、PPO 設定能正常組出來。想把它升級成真的問題,照
+它的形狀換上你的後端和環境,把模組搬進 `src/problems/`,再從
 `problems/__init__.py` 註冊。
+
+完成前檢查一遍:
+
+- 模型檔放 `src/env/<問題>/`、輸入資料放 `data/<問題>/`,兩個目錄都不進
+  版控,記得補 `PUT_*_HERE.txt` 佔位檔。
+- 超參數預設值照既有寫法:`add_env_args` 裡用 `os.getenv` 讀環境變數當預
+  設值,並在 `.env` 裡留下說明。
+- 測試把後端換成虛擬物件,不需要真的模型檔或 GPU,寫法參考
+  `tests/conftest.py` 和既有的環境測試。
+- `uv run pytest`、`uv run ruff check .`、`uv run mypy .` 全部通過。
 
 ## 本地模型推論
 
-`env/` 底下的硬度預測程式也能脫離 RL 迴圈單獨使用,適合本地腳本、批次推
-論或其他最佳化流程載入平台訓練出的模型包。
+硬度預測模型也能單獨使用,完全不碰強化學習。想直接拿預測結果時很方便:把
+一批候選成分寫成 CSV 丟進去,就能拿回每一筆的預測硬度。
 
-ZIP 模型包必須包含:
+需要一個訓練好的模型包,也就是一個 ZIP,內容長這樣:
 
 ```text
 training_config.json
@@ -119,7 +106,20 @@ committee_scalers.pkl
 committee_models/
 ```
 
+### 命令列
+
+最簡單的用法。指定模型 ZIP、輸入 CSV 和輸出位置:
+
+```bash
+uv run python scripts/run_model_inference.py \
+  --model src/env/hardness/XGB_model_selection_package.zip \
+  --input data/hardness/input.csv \
+  --output data/hardness/output.csv
+```
+
 ### Python API
+
+在自己的腳本或 notebook 裡用:
 
 ```python
 import pandas as pd
@@ -142,12 +142,9 @@ result_df = model.predict(input_df)
 print(result_df)
 ```
 
-輸出包含 `Predicted <target>` 與 `Uncertainty <target>` 欄位。若想要型別化
-的介面、不想依賴 DataFrame 欄位名,可以把模型包裝進
-`env.backends.CommitteePackageBackend`,呼叫 `predict(features)` 拿
-`PredictionResult`。
+輸出有 `Predicted <target>` 和 `Uncertainty <target>` 兩個欄位。
 
-### 函式 API
+也有一個直接吃 CSV 的捷徑函式:
 
 ```python
 from env import predict
@@ -158,27 +155,20 @@ result_df = predict(
 )
 ```
 
-### 命令列
+### 類別型欄位
+
+輸入欄位保持訓練資料原本的樣子就好。像 `Structure` 這種欄位,直接放
+`"BCC"` 之類的值即可。如果當初訓練時對這類欄位做過編碼(one-hot 等),模
+型包自己知道,會套用同一套編碼,不用手動造出 `Structure_FCC` 這種欄位。
+
+## 測試、lint 與型別檢查
 
 ```bash
-uv run python scripts/run_model_inference.py \
-  --model src/env/hardness/XGB_model_selection_package.zip \
-  --input data/hardness/input.csv \
-  --output data/hardness/output.csv
+uv run pytest
+uv run ruff check .
+uv run mypy .
 ```
 
-### 類別型特徵
-
-輸入欄位保持與訓練資料相同的原始形式即可。如果當初訓練流程用了 one-hot、
-label 或 target 編碼,模型包會從 `training_config.json` 讀到這件事並自動
-套用,不需要自己手動造出 `Structure_FCC` 這類欄位。
-
-## 文件地圖
-
-- `CONTEXT.md` 定義專案的共同語彙(I-V Curve、Curve Condition、Feasible
-  Material Composition、Problem Spec 等),程式與討論都用這套詞。
-- `docs/adr/` 存架構決策紀錄:ADR 0001 鎖定 EEHEMT 的 NRMSE 目標,ADR
-  0002 是 IR-drop 求解策略,ADR 0003 是問題註冊表、預測後端與目標抽象。
-- `docs/how-to-add-a-problem.md` 是上面擴充指南的獨立版本。
-- `docs/superpowers/specs/` 與 `docs/superpowers/plans/` 保存形成目前架構
-  的設計文件與實作計畫。
+一律透過 `uv run` 執行。全域安裝的 mypy 看不到專案 venv 裡的套件,會報出
+假錯誤。測試會自行 stub 掉推論模型,所以沒有模型 ZIP、沒有 GPU 也能跑完
+整套測試。
