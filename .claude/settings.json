@@ -1,0 +1,7 @@
+{
+  "model": "fable",
+  "effortLevel": "max",
+  "enabledPlugins": {
+    "codex@openai-codex": true
+  }
+}
