@@ -59,8 +59,7 @@ def build_ray_runtime_env(current_dir: str) -> dict[str, object]:
     }
 
 
-def _wandb_project_name(env_name: str, training_module: ModuleType) -> str:
-    del training_module  # kept for call-site stability; registry owns the mapping
+def _wandb_project_name(env_name: str) -> str:
     return problem_registry.get(env_name).wandb_project
 
 
@@ -108,7 +107,7 @@ def main() -> None:
                 callbacks=[
                     build_wandb_callback(
                         args,
-                        project_name=_wandb_project_name(args.env, training_module),
+                        project_name=_wandb_project_name(args.env),
                     )
                 ],
             ),

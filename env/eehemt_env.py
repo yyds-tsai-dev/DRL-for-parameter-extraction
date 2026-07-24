@@ -31,12 +31,8 @@ with open(all_possible_key_params_path, "r", encoding="utf-8") as f:
 key_params_names = [
     name.strip() for name in os.getenv("KEY_PARAMS", "").split(",") if name.strip()
 ]
-# Set key params config
-key_params_config = {}
 for name in key_params_names:
-    if name in ALL_POSSIBLE_KEY_PARAMS:
-        key_params_config[name] = ALL_POSSIBLE_KEY_PARAMS[name]
-    else:
+    if name not in ALL_POSSIBLE_KEY_PARAMS:
         print(
             f"Warning: Parameter '{name}' from environment variable not found in master config. Skipping."
         )
@@ -144,13 +140,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             high=np.full(n_key_params, 1.0, dtype=np.float32),
             dtype=np.float32,
         )
-        # self.action_space = Box(
-        #     low=0.0, high=1.0, shape=(n_key_params,), dtype=np.float32
-        # )
-        # self.ACTION_FACTORS = np.array((config["max"] - config["min"]) * scaling_ratio
-        #     [config["factor"] for config in key_params_config.values()],
-        #     dtype=np.float32,
-        # )  # Linear transform better than independent function transform
         self.ACTION_FACTORS = PARAMETER_SPECS.action_factors(range_fraction=0.01)
         self.prev_params_delta = {name: EPSILON for name in key_params_names}
 
@@ -180,18 +169,11 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         high_bounds = np.concatenate(
             [param_high, prev_params_delta_high, err_vector_high]
         ).astype(np.float32)
-        # low_bounds = np.concatenate(
-        #     [param_low, err_vector_low]
-        # ).astype(np.float32)
-        # high_bounds = np.concatenate(
-        #     [param_high, err_vector_high]
-        # ).astype(np.float32)
         self.observation_space = Box(low=low_bounds, high=high_bounds, dtype=np.float32)
 
         # === Episode Control ===
         self.MAX_EPISODE_STEPS = int(os.getenv("MAX_EPISODE_STEPS", 1000))
         self.REWARD_NORM_THRESHOLD = float(os.getenv("REWARD_NORM_THRESHOLD", 100.0))
-        self.ARCSINH_HUBER_THRESHOLD = float(os.getenv("ARCSINH_HUBER_THRESHOLD", 1e-5))
         self.NRMSE_THRESHOLD = float(
             config.get("nrmse_threshold", os.getenv("NRMSE_THRESHOLD", 10.0))
         )
@@ -223,18 +205,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
             delta=self.huber_delta,
             epsilon=EPSILON,
         )
-
-        # === Stagnation (停滯) detection settings ===
-        # self.use_stagnation = config.get("use_stagnation", True)
-        # if self.use_stagnation:
-        #     print("\n==== Stagnation detection is enabled ====\n")
-        #     self.STAGNATION_PATIENCE_STEPS = int(
-        #         os.getenv("STAGNATION_PATIENCE_STEPS", 50)
-        #     )  # step 耐心值
-        #     self.STAGNATION_THRESHOLD = float(
-        #         os.getenv("STAGNATION_THRESHOLD", 1e-3)
-        #     )  # 進展的門檻
-        #     self.stagnation_cnt = 0
 
     def _get_obs(self, concat_err_vector: np.ndarray) -> np.ndarray:
         """
@@ -273,12 +243,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         obs = np.concatenate(
             [current_key_values, prev_params_delta, err_features]
         ).astype(np.float32)
-        # obs = np.concatenate(
-        #     [current_key_values, err_features]
-        # ).astype(np.float32)
-        # if np.any(np.isnan(obs)) or np.any(np.isinf(obs)):
-        #     print("Warning: NaN or Inf detected in obs, cleaning it.")
-        #     obs = np.nan_to_num(obs, nan=0.0, posinf=1e5, neginf=-1e5)
 
         obs = np.nan_to_num(
             obs,
@@ -453,9 +417,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
             return normalized_reward
 
-        # Optional: clip normalized reward to reasonable range
-        # return np.clip(normalized_reward, -5.0, 5.0)
-
     def _scaled_reward_from_nrmse(self, nrmse: float) -> float:
         return self.objective.reward_from_nrmse(nrmse)
 
@@ -490,8 +451,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
 
         self.current_step = 0
         self._clear_episode_best()
-        # if self.use_stagnation:
-        #     self.stagnation_cnt = 0
 
         # === Run initial simulation for all Vds conditions & calculate fit loss ===
         init_i_sim_matrix, init_err_vector, init_loss_vals = (
@@ -584,17 +543,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
         terminated_success = solver_converged and self.objective.is_success(
             current_nrmse
         )
-        # if self.use_stagnation:
-        #     if abs(reward) < self.STAGNATION_THRESHOLD:
-        #         self.stagnation_cnt += 1
-        #     else:
-        #         self.stagnation_cnt = 0
-        #     terminated_stagnation = (
-        #         self.stagnation_cnt >= self.STAGNATION_PATIENCE_STEPS
-        #     )
-        #     terminated = terminated_success or terminated_stagnation
-        # else:
-        #     terminated = terminated_success
         terminated = terminated_success
         truncated = (
             not solver_converged
@@ -606,10 +554,6 @@ class EEHEMTEnv_Measure_VDS(gym.Env):
                 f"({current_nrmse:.6g}) has reached the threshold "
                 f"({self.NRMSE_THRESHOLD:.6g})."
             )
-        # if self.use_stagnation and terminated_stagnation:
-        #     print(
-        #         f"Terminated due to stagnation ({self.STAGNATION_PATIENCE_STEPS} steps with little improvement)."
-        #     )
         if solver_failures:
             print(
                 "IR-drop solver failed to converge; truncating episode with "
